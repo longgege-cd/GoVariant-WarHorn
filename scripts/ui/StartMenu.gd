@@ -1,0 +1,372 @@
+# 主菜单（开始界面）—— 极简战争号角 · 第三次设计
+#
+# 设计理念（stark 极简原则）：
+#   - 纯黑背景，不抢主体
+#   - 信息层级清晰：标题 > 副标题 > 模式列表 > 开始按钮 > 辅助
+#   - 模式列表：竖排细长项，左侧竖条指示选中，悬停背景微亮
+#   - 无卡片、无氛围灯、无装饰块，只保留标题下方一根细线
+#   - 动效：统一淡入+微上移，按阅读顺序逐个出现
+extends Control
+
+signal start_requested(mode: String, difficulty: int, time_setting: Dictionary)
+signal theme_cycle_requested
+signal quit_requested
+
+const AIManager = preload("res://scripts/ai/AIManager.gd")
+
+const MODE_ENTRIES := [
+	{"name": "本地双人", "desc": "同一屏幕对弈", "mode": "pvp", "diff": 0},
+	{"name": "人机 · 简单", "desc": "AI 新手", "mode": "pve", "diff": 0},
+	{"name": "人机 · 中等", "desc": "AI 老练", "mode": "pve", "diff": 1},
+	{"name": "人机 · 困难", "desc": "AI 精通", "mode": "pve", "diff": 2},
+	{"name": "联机对战", "desc": "主机或加入", "mode": "online", "diff": 0},
+]
+
+# 思考时间选项：{ "label": 显示名, "main": 秒(-1=无限), "byoyomi": 读秒次数, "byoyomi_duration": 读秒时长 }
+const TIME_ENTRIES := [
+	{"label": "无 限 制", "main": -1.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label": "30 秒", "main": 30.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label": "60 秒", "main": 60.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label": "2 分钟", "main": 120.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label": "5 分钟", "main": 300.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+]
+
+var _selected_idx: int = 0
+var _selected_time_idx: int = 0  # 思考时间选项索引
+var _items: Array = []  # 模式列表项节点
+var _time_items: Array = []  # 思考时间列表项节点
+
+# 动画引用节点
+var _title: Label = null
+var _subtitle: Label = null
+var _divider: Control = null
+var _list: VBoxContainer = null
+var _start_btn: Button = null
+var _bottom_row: HBoxContainer = null
+
+func _ready() -> void:
+	set_anchors_preset(PRESET_FULL_RECT)
+	_build_ui()
+	_play_entrance()
+
+# ===== UI 构建 =====
+func _build_ui() -> void:
+	# 根容器：垂直居中，紧凑
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(PRESET_FULL_RECT)
+	root.alignment = BoxContainer.ALIGNMENT_CENTER
+	root.add_theme_constant_override("separation", 0)
+	root.offset_top = 24
+	root.offset_bottom = -28
+	add_child(root)
+
+	_title = Label.new()
+	_title.text = "战争号角"
+	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title.add_theme_font_size_override("font_size", 64)
+	_title.add_theme_color_override("font_color", UITheme.C_GOLD)
+	# 文字描边增加层次感（不使用色块）
+	_title.add_theme_color_override("font_shadow_color", Color(0.05, 0.03, 0.02, 0.9))
+	_title.add_theme_constant_override("shadow_offset_x", 3)
+	_title.add_theme_constant_override("shadow_offset_y", 4)
+	_title.add_theme_constant_override("shadow_outline_size", 2)
+	root.add_child(_title)
+
+	# 标题与副标题间距
+	_add_spacer(root, 6)
+
+	_subtitle = Label.new()
+	_subtitle.text = "边境线"
+	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_subtitle.add_theme_font_size_override("font_size", 18)
+	_subtitle.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	root.add_child(_subtitle)
+
+	_add_spacer(root, 8)
+
+	_divider = Control.new()
+	_divider.custom_minimum_size = Vector2(280, 2)
+	_divider.size_flags_horizontal = SIZE_SHRINK_CENTER
+	root.add_child(_divider)
+
+	_add_spacer(root, 24)
+
+	# 模式列表
+	_list = VBoxContainer.new()
+	_list.alignment = BoxContainer.ALIGNMENT_CENTER
+	_list.add_theme_constant_override("separation", 2)
+	_list.size_flags_horizontal = SIZE_SHRINK_CENTER
+	root.add_child(_list)
+	for i in MODE_ENTRIES.size():
+		_add_mode_item(_list, i)
+
+	_add_spacer(root, 20)
+
+	# 思考时间设置标签
+	var time_title := Label.new()
+	time_title.text = "思考时间"
+	time_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	time_title.add_theme_font_size_override("font_size", 14)
+	time_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	root.add_child(time_title)
+
+	_add_spacer(root, 6)
+
+	# 思考时间选项（水平横排）
+	var time_row := HBoxContainer.new()
+	time_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	time_row.add_theme_constant_override("separation", 6)
+	time_row.size_flags_horizontal = SIZE_SHRINK_CENTER
+	root.add_child(time_row)
+	for i in TIME_ENTRIES.size():
+		_add_time_item(time_row, i)
+
+	_add_spacer(root, 24)
+
+	# 开始按钮
+	_start_btn = Button.new()
+	_start_btn.text = "开 始 对 局"
+	_start_btn.custom_minimum_size = Vector2(280, 48)
+	_start_btn.size_flags_horizontal = SIZE_SHRINK_CENTER
+	_start_btn.add_theme_font_size_override("font_size", 20)
+	_start_btn.add_theme_color_override("font_color", UITheme.C_GOLD)
+	_start_btn.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
+	_start_btn.add_theme_stylebox_override("normal", _make_btn_style(false))
+	_start_btn.add_theme_stylebox_override("hover", _make_btn_style(true))
+	_start_btn.add_theme_stylebox_override("pressed", _make_btn_style(true))
+	_start_btn.pressed.connect(_on_start)
+	_start_btn.mouse_entered.connect(func(): UITheme.animate_button_hover(_start_btn, true))
+	_start_btn.mouse_exited.connect(func(): UITheme.animate_button_hover(_start_btn, false))
+	root.add_child(_start_btn)
+
+	_add_spacer(root, 16)
+
+	# 底部辅助按钮
+	_bottom_row = HBoxContainer.new()
+	_bottom_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_bottom_row.add_theme_constant_override("separation", 24)
+	root.add_child(_bottom_row)
+
+	var theme_btn := _make_text_button("切换主题", false)
+	theme_btn.pressed.connect(func(): theme_cycle_requested.emit())
+	_bottom_row.add_child(theme_btn)
+
+	var quit_btn := _make_text_button("退出", true)
+	quit_btn.pressed.connect(func(): quit_requested.emit())
+	_bottom_row.add_child(quit_btn)
+
+# 添加思考时间选项项
+func _add_time_item(parent: Container, idx: int) -> void:
+	var entry: Dictionary = TIME_ENTRIES[idx]
+	var active: bool = (idx == _selected_time_idx)
+	var btn := Button.new()
+	btn.text = entry.label
+	btn.flat = true
+	btn.add_theme_font_size_override("font_size", 13)
+	btn.add_theme_color_override("font_color", UITheme.C_GOLD if active else UITheme.C_TEXT_DIM)
+	btn.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
+	btn.add_theme_stylebox_override("normal", _make_time_style(active, false))
+	btn.add_theme_stylebox_override("hover", _make_time_style(active, true))
+	btn.add_theme_stylebox_override("pressed", _make_time_style(active, true))
+	btn.pressed.connect(func(): _on_time_selected(idx))
+	parent.add_child(btn)
+	_time_items.append({"btn": btn, "idx": idx})
+
+func _make_time_style(active: bool, hover: bool) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.corner_detail = 1
+	if active:
+		sb.bg_color = Color(0.12, 0.09, 0.06, 0.75)
+		sb.border_width_left = 1
+		sb.border_width_right = 1
+		sb.border_width_top = 1
+		sb.border_width_bottom = 1
+		sb.border_color = UITheme.C_GOLD
+	elif hover:
+		sb.bg_color = Color(0.10, 0.08, 0.07, 0.55)
+	else:
+		sb.bg_color = Color(0, 0, 0, 0)
+	return sb
+
+func _on_time_selected(idx: int) -> void:
+	_selected_time_idx = idx
+	for entry in _time_items:
+		var active: bool = (entry.idx == _selected_time_idx)
+		entry.btn.add_theme_color_override("font_color", UITheme.C_GOLD if active else UITheme.C_TEXT_DIM)
+		entry.btn.add_theme_stylebox_override("normal", _make_time_style(active, false))
+		entry.btn.add_theme_stylebox_override("hover", _make_time_style(active, true))
+
+# 添加模式列表项
+func _add_mode_item(parent: Container, idx: int) -> void:
+	var entry: Dictionary = MODE_ENTRIES[idx]
+	var active: bool = (idx == _selected_idx)
+
+	var item := PanelContainer.new()
+	item.custom_minimum_size = Vector2(360, 44)
+	item.size_flags_horizontal = SIZE_SHRINK_CENTER
+	item.add_theme_stylebox_override("panel", _make_item_style(active, false))
+	item.mouse_entered.connect(func(): item.add_theme_stylebox_override("panel", _make_item_style(idx == _selected_idx, true)))
+	item.mouse_exited.connect(func(): item.add_theme_stylebox_override("panel", _make_item_style(idx == _selected_idx, false)))
+	item.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			_on_item_selected(idx)
+	)
+	parent.add_child(item)
+
+	var hbox := HBoxContainer.new()
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_theme_constant_override("separation", 12)
+	hbox.offset_left = 16
+	hbox.offset_right = -16
+	item.add_child(hbox)
+
+	# 选中指示器放最左侧
+	var indicator := Control.new()
+	indicator.custom_minimum_size = Vector2(3, 16)
+	indicator.add_theme_stylebox_override("panel", _make_indicator_style(active))
+	hbox.add_child(indicator)
+
+	var name_lbl := Label.new()
+	name_lbl.text = entry.name
+	name_lbl.add_theme_font_size_override("font_size", 16)
+	name_lbl.add_theme_color_override("font_color", UITheme.C_GOLD if active else UITheme.C_TEXT)
+	name_lbl.size_flags_horizontal = SIZE_SHRINK_CENTER
+	hbox.add_child(name_lbl)
+
+	var desc_lbl := Label.new()
+	desc_lbl.text = entry.desc
+	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	desc_lbl.add_theme_font_size_override("font_size", 12)
+	desc_lbl.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
+	desc_lbl.size_flags_horizontal = SIZE_EXPAND_FILL
+	hbox.add_child(desc_lbl)
+
+	_items.append({"item": item, "idx": idx, "name_lbl": name_lbl, "indicator": indicator})
+
+func _make_item_style(active: bool, hover: bool) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.corner_detail = 1
+	if active:
+		# 选中态：左侧区域微亮 + 微金边框
+		sb.bg_color = Color(0.12, 0.09, 0.06, 0.75)
+		sb.border_width_left = 3
+		sb.border_color = UITheme.C_GOLD
+	elif hover:
+		# 悬停：背景微亮
+		sb.bg_color = Color(0.10, 0.08, 0.07, 0.55)
+	else:
+		sb.bg_color = Color(0, 0, 0, 0)
+	return sb
+
+func _make_indicator_style(active: bool) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.corner_detail = 1
+	sb.bg_color = UITheme.C_GOLD if active else Color(0.25, 0.22, 0.16, 0.6)
+	return sb
+
+func _make_btn_style(hover: bool) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.corner_detail = 1
+	sb.border_width_left = 2
+	sb.border_width_right = 2
+	sb.border_width_top = 2
+	sb.border_width_bottom = 2
+	sb.border_color = UITheme.C_GOLD_BRIGHT if hover else UITheme.C_GOLD
+	sb.bg_color = Color(0.08, 0.06, 0.04, 0.9) if hover else Color(0.04, 0.03, 0.02, 0.9)
+	return sb
+
+func _make_text_button(label: String, danger: bool) -> Button:
+	var b := Button.new()
+	b.text = label
+	b.flat = true
+	b.add_theme_font_size_override("font_size", 13)
+	b.add_theme_color_override("font_color", UITheme.C_GOLD_DIM if not danger else UITheme.C_RED_WAR)
+	b.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT if not danger else Color(1.0, 0.5, 0.35, 1.0))
+	return b
+
+func _on_item_selected(idx: int) -> void:
+	_selected_idx = idx
+	for entry in _items:
+		var active: bool = (entry.idx == _selected_idx)
+		entry.item.add_theme_stylebox_override("panel", _make_item_style(active, false))
+		entry.name_lbl.add_theme_color_override("font_color", UITheme.C_GOLD if active else UITheme.C_TEXT)
+		entry.indicator.add_theme_stylebox_override("panel", _make_indicator_style(active))
+
+func _on_start() -> void:
+	var entry: Dictionary = MODE_ENTRIES[_selected_idx]
+	var time_entry: Dictionary = TIME_ENTRIES[_selected_time_idx]
+	var time_setting: Dictionary = {
+		"main": time_entry.main,
+		"byoyomi": time_entry.byoyomi,
+		"byoyomi_duration": time_entry.byoyomi_duration,
+	}
+	start_requested.emit(entry.mode, entry.diff, time_setting)
+
+func _add_spacer(parent: Container, h: int) -> void:
+	var sp := Control.new()
+	sp.custom_minimum_size = Vector2(0, h)
+	parent.add_child(sp)
+
+# ===== 入场动画 =====
+func _play_entrance() -> void:
+	var delay: float = 0.0
+	_animate_in(_title, 0.6, 0.0, delay); delay += 0.4
+	_animate_in(_subtitle, 0.5, 0.0, delay); delay += 0.3
+	_animate_in(_divider, 0.4, 0.0, delay); delay += 0.3
+	for entry in _items:
+		_animate_in(entry.item, 0.35, 0.0, delay)
+		delay += 0.08
+	delay += 0.15
+	# 思考时间选项逐个淡入
+	for entry in _time_items:
+		_animate_in(entry.btn, 0.3, 0.0, delay)
+		delay += 0.05
+	delay += 0.15
+	_animate_in(_start_btn, 0.45, 0.0, delay); delay += 0.3
+	_animate_in(_bottom_row, 0.35, 0.0, delay)
+
+func _animate_in(node: Control, duration: float, y_offset: float, wait: float) -> void:
+	node.modulate.a = 0.0
+	if y_offset != 0:
+		node.position.y += y_offset
+	var t := node.create_tween()
+	t.set_ease(Tween.EASE_OUT)
+	t.set_trans(Tween.TRANS_CUBIC)
+	t.tween_interval(wait)
+	t.tween_property(node, "modulate:a", 1.0, duration)
+	if y_offset != 0:
+		t.parallel().tween_property(node, "position:y", node.position.y - y_offset, duration)
+
+# ===== 键盘操作 =====
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_UP:
+				_on_item_selected((_selected_idx - 1 + MODE_ENTRIES.size()) % MODE_ENTRIES.size())
+				get_viewport().set_input_as_handled()
+			KEY_DOWN:
+				_on_item_selected((_selected_idx + 1) % MODE_ENTRIES.size())
+				get_viewport().set_input_as_handled()
+			KEY_ENTER, KEY_KP_ENTER:
+				_on_start()
+				get_viewport().set_input_as_handled()
+			KEY_T:
+				theme_cycle_requested.emit()
+				get_viewport().set_input_as_handled()
+
+# ===== 绘制 =====
+func _draw() -> void:
+	var w: float = size.x
+	var h: float = size.y
+	if w <= 0 or h <= 0:
+		return
+	# 纯黑背景
+	draw_rect(Rect2(0, 0, w, h), Color.BLACK, true)
+	# 标题下方一根细线
+	if _divider != null:
+		var pos: Vector2 = _divider.global_position
+		var dw: float = _divider.size.x
+		var dy: float = pos.y + _divider.size.y * 0.5
+		var c: Color = UITheme.C_GOLD_DIM
+		c.a = 0.7
+		draw_line(Vector2(pos.x, dy), Vector2(pos.x + dw, dy), c, 1.0)

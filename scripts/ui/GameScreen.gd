@@ -517,6 +517,15 @@ func _on_move_committed(outcome: Dictionary) -> void:
 		EffectsPlayer.play_bounce(outcome.overlap_pos, outcome.placed, mover_color)
 	if outcome.captures.size() > 0:
 		EffectsPlayer.play_capture(outcome.captures, outcome.captured_color)
+		# 计算歼灭分：在己方领土/边境提吃 +2/子
+		var annihilate_count: int = 0
+		for cap_pos in outcome.captures:
+			if Const.is_defense_zone(cap_pos.y, mover_color):
+				annihilate_count += 1
+		if annihilate_count > 0:
+			var gain: int = annihilate_count * 2
+			var popup_pos: Vector2i = outcome.captures[0]
+			EffectsPlayer.play_score_popup("歼灭 +%d" % gain, popup_pos, mover_color, "annihilate")
 	if outcome.get("deployed", false):
 		# 部署特种部队：用部署特效（己方视角下在位置画，对方视角下画在棋盘中心避免泄露）
 		EffectsPlayer.play_special_deploy(mover_color, outcome.placed)
@@ -687,14 +696,19 @@ func _detect_and_trigger_territory_siege() -> void:
 					new_pts.append(p)
 			if not new_pts.is_empty():
 				EffectsPlayer.play_territory_formed(new_pts, c)
-			if matched_prev_idx.has(c):
-				matched_prev_idx[c][best_idx] = true
-			else:
-				matched_prev_idx[c] = {best_idx: true}
+				# 围空得分文字：新增点数 × 2
+				var territory_gain: int = new_pts.size() * 2
+				EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, new_pts[0], c, "territory")
+		if matched_prev_idx.has(c):
+			matched_prev_idx[c][best_idx] = true
 		else:
-			# 全新围空：所有点都触发特效
-			if not curr_pts.is_empty():
-				EffectsPlayer.play_territory_formed(curr_pts, c)
+			matched_prev_idx[c] = {best_idx: true}
+	else:
+		# 全新围空：所有点都触发特效
+		if not curr_pts.is_empty():
+			EffectsPlayer.play_territory_formed(curr_pts, c)
+			var territory_gain: int = curr_pts.size() * 2
+			EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, curr_pts[0], c, "territory")
 	# 未匹配的 prev 围空 → 失守（消失或部分失去）
 	for c in prev_by_color.keys():
 		var prev_list: Array = prev_by_color[c]
@@ -723,6 +737,12 @@ func _detect_and_trigger_territory_siege() -> void:
 			broken_sieged.append(Vector2i(col, row))
 	if not new_sieged.is_empty():
 		EffectsPlayer.play_siege(new_sieged)
+		# 围困得分文字：+1/子，颜色属于围困方（被围困棋子的对方）
+		var siege_gain: int = new_sieged.size()
+		var first_pos: Vector2i = new_sieged[0]
+		var victim_color: int = session.board.get_at(first_pos.y, first_pos.x)
+		var sieger_color: int = Const.opponent(victim_color)
+		EffectsPlayer.play_score_popup("围困 +%d" % siege_gain, first_pos, sieger_color, "siege")
 	if not broken_sieged.is_empty():
 		EffectsPlayer.play_siege_broken(broken_sieged)
 	_prev_sieged_stones = curr_sieged
@@ -846,6 +866,12 @@ func _on_scores_changed(scores: Dictionary) -> void:
 
 # 特效信号处理：转发到 BoardView 叠加层
 func _on_effect_started(effect_id: String, payload: Dictionary) -> void:
+	# 得分浮动文字使用独立 Label + Tween 动画，不走 _draw 叠加层
+	if effect_id == "score_popup":
+		var pos: Vector2i = payload.get("position", Vector2i(-1, -1))
+		if pos.x >= 0 and pos.y >= 0:
+			board_view.spawn_score_popup(payload.get("text", ""), pos, payload.get("type", ""))
+		return
 	var overlay: Dictionary = {"type": effect_id, "duration": _effect_duration(effect_id)}
 	# 合并 payload 字段到 overlay（便于 BoardView 直接读取）
 	for key in payload:

@@ -93,6 +93,22 @@ func play_territory_lost(points: Array, color: int) -> void:
 	_play_sound("territory")
 	effect_started.emit("territory_lost", {"points": points, "color": color})
 
+# 得分浮动文字特效（围空/歼灭/围困）
+# text: 显示文字，如 "围空 +4"
+# position: 棋盘格坐标 Vector2i(col, row)
+# color: 得分方 Const.BLACK / Const.WHITE
+# popup_type: "territory" | "annihilate" | "siege"
+func play_score_popup(text: String, position: Vector2i, color: int, popup_type: String) -> void:
+	if not enabled:
+		return
+	Log.d("[特效] 得分文字 %s pos=%s color=%d type=%s" % [text, str(position), color, popup_type])
+	effect_started.emit("score_popup", {
+		"text": text,
+		"position": position,
+		"color": color,
+		"type": popup_type,
+	})
+
 # 终局特效
 func play_game_end(result: Dictionary) -> void:
 	if not enabled:

@@ -75,6 +75,11 @@ func add_effect_overlay(overlay: Dictionary) -> void:
 	effect_overlays.append(overlay)
 	queue_redraw()
 
+# 生成得分浮动文字（围空/歼灭/围困）
+func spawn_score_popup(text: String, board_pos: Vector2i, popup_type: String) -> void:
+	var popup := preload("res://scripts/effects/ScorePopup.gd").new(text, board_pos, popup_type)
+	add_child(popup)
+
 # 在 _process 中清理过期叠加层
 func _cleanup_overlays() -> void:
 	var now: int = Time.get_ticks_msec()

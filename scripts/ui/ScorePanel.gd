@@ -1,4 +1,4 @@
-# 计分板：显示单方分数明细 + 兵力 + 行棋方
+# 计分板：显示单方分数明细 + 兵力 + 行棋方 + 特种部队部署按钮
 #
 # 设计（基于 UITheme 战火夜幕色系）：
 #   - 纯显示组件，由 GameScreen 注入 session 并触发刷新
@@ -7,10 +7,19 @@
 #   - 分数变化动画：防御分金色闪烁、战损分红色闪烁、占领分暖金放大
 #   - 数字滚动动画：总分变化时从旧值滚动到新值
 #   - 入场动画：面板淡入 + 轻微缩放
+#   - 部署特种部队按钮：身份名片下方，行棋方且可部署时启用
 #   支持单方竖向显示（set_side 指定黑/白方）
 extends Panel
 
+const ScoreBarTracker = preload("res://scripts/ui/ScoreBarTracker.gd")
+
+signal deploy_special_pressed
+
 var session: GameSession = null
+# 特种部队部署按钮（身份名片下方）
+var _deploy_btn: Button = null
+var _deploy_mode: bool = false  # 全局部署模式（由 GameScreen 通知）
+var _controllable: bool = true  # 该方是否可由本地玩家操作（PvE/联机中 AI/对手方为 false）
 var side: int = Const.BLACK  # 本面板显示哪一方
 var timer: TimerSystem = null  # 计时器引用（用于环形计时条）
 var _role_name: String = ""  # 动态角色名（你/AI·难度/对手）；空则用默认"黑方/白方"
@@ -34,12 +43,15 @@ var _c_accent: Color = UITheme.C_GOLD
 # 头像（从 user://avatars/{black|white}.png 加载，圆形裁剪；缺失则绘制占位符）
 var _avatar_tex: ImageTexture = null
 var _avatar_radius: float = 30.0  # 头像绘制半径
+# 分数条动态基准：各分量历史最大值（只增不减），条形随分数增长而变长，不因其他分量变化抖动
+var _bar_tracker := ScoreBarTracker.new()
 
 func _ready() -> void:
 	_theme = ThemeManager.current
 	_refresh_theme_colors()
 	ThemeManager.theme_changed.connect(_on_theme_changed)
 	reload_avatar()
+	_build_deploy_button()
 	# 入场动画
 	modulate.a = 0.0
 	scale = Vector2(0.92, 0.92)
@@ -54,7 +66,107 @@ func _ready() -> void:
 func _on_theme_changed(t: BaseTheme) -> void:
 	_theme = t
 	_refresh_theme_colors()
+	_apply_deploy_button_style()
 	queue_redraw()
+
+# 创建特种部队部署按钮（身份名片下方，居中）
+func _build_deploy_button() -> void:
+	_deploy_btn = Button.new()
+	_deploy_btn.text = "特种部队"
+	_deploy_btn.custom_minimum_size = Vector2(150, 26)
+	_deploy_btn.size = Vector2(150, 26)
+	_deploy_btn.visible = false  # 默认隐藏，待 set_session 后按 special.enabled 显示
+	_deploy_btn.pressed.connect(func(): deploy_special_pressed.emit())
+	add_child(_deploy_btn)
+	_apply_deploy_button_style()
+
+# 应用按钮样式（像素风 stylebox，与 ControlPanel 按钮风格一致）
+func _apply_deploy_button_style() -> void:
+	if _deploy_btn == null or not is_instance_valid(_deploy_btn):
+		return
+	var t: BaseTheme = ThemeManager.current
+	if t == null:
+		return
+	var font_c: Color = t.font_color
+	var hover_c: Color = t.active_side_color
+	_deploy_btn.add_theme_color_override("font_color", font_c)
+	_deploy_btn.add_theme_color_override("font_hover_color", hover_c)
+	_deploy_btn.add_theme_color_override("font_pressed_color", hover_c)
+	_deploy_btn.add_theme_color_override("font_disabled_color", font_c.darkened(0.5))
+	var sb_normal := StyleBoxFlat.new()
+	sb_normal.corner_detail = 1
+	sb_normal.border_width_left = 2
+	sb_normal.border_width_right = 2
+	sb_normal.border_width_top = 2
+	sb_normal.border_width_bottom = 2
+	sb_normal.bg_color = Color(0.04, 0.03, 0.05, 0.9)
+	sb_normal.border_color = t.active_side_color.darkened(0.4)
+	var sb_hover := sb_normal.duplicate()
+	sb_hover.bg_color = Color(0.10, 0.08, 0.06, 0.95)
+	sb_hover.border_color = t.active_side_color
+	_deploy_btn.add_theme_stylebox_override("normal", sb_normal)
+	_deploy_btn.add_theme_stylebox_override("hover", sb_hover)
+	_deploy_btn.add_theme_stylebox_override("pressed", sb_hover)
+	_deploy_btn.add_theme_stylebox_override("disabled", sb_normal)
+
+# 通知部署模式变化（由 GameScreen 调用）
+func update_deploy_state(deploy_mode: bool) -> void:
+	_deploy_mode = deploy_mode
+
+# 设置该方是否可由本地玩家操作（PvE 中 AI 方、联机中对手方为 false）
+func set_controllable(c: bool) -> void:
+	_controllable = c
+
+# 每帧更新部署按钮的位置/文字/可用性
+func _update_deploy_button() -> void:
+	if _deploy_btn == null or not is_instance_valid(_deploy_btn):
+		return
+	if session == null:
+		_deploy_btn.visible = false
+		return
+	# 特种部队未启用 → 隐藏按钮
+	if not session.special.enabled:
+		_deploy_btn.visible = false
+		return
+	_deploy_btn.visible = true
+	# 位置：身份名片下方居中（与 _draw_content 中布局一致）
+	var h: float = size.y
+	var content_h: float = 555.0  # 与 _draw_content 中保持一致（调整后）
+	var oy: float = max(0.0, (h - content_h) * 0.5)
+	var btn_w: float = 150.0
+	var btn_h: float = 26.0
+	var btn_x: float = (size.x - btn_w) * 0.5
+	var btn_y: float = oy + 82.0  # 兵力行(y+oy+68)下方，分隔线1(y+oy+112)上方
+	_deploy_btn.position = Vector2(btn_x, btn_y)
+	_deploy_btn.size = Vector2(btn_w, btn_h)
+	# 文字与可用性
+	var is_my_turn: bool = session.to_move == side and not session.game_over
+	var can_deploy: bool = session.special.can_deploy(side, session.ply)
+	var left: int = session.special.uses_left(side)
+	# 非本地可控方（AI/对手）的按钮仅展示状态，始终禁用
+	if not _controllable:
+		if left <= 0:
+			_deploy_btn.text = "特 种 已 用 尽"
+		else:
+			_deploy_btn.text = "特 种 (剩 %d)" % left
+		_deploy_btn.disabled = true
+	elif _deploy_mode and is_my_turn:
+		_deploy_btn.text = "✕ 取 消 部 署"
+		_deploy_btn.disabled = false
+	elif is_my_turn and can_deploy:
+		_deploy_btn.text = "▸ 部 署 特 种 (剩 %d)" % left
+		_deploy_btn.disabled = false
+	elif is_my_turn:
+		# 行棋方但不可部署
+		if left <= 0:
+			_deploy_btn.text = "特 种 已 用 尽"
+		else:
+			_deploy_btn.text = "特 种 冷 却 中"
+		_deploy_btn.disabled = true
+	else:
+		# 非行棋方：仅显示状态，禁用
+		_deploy_btn.text = "特 种 (剩 %d)" % left
+		_deploy_btn.disabled = true
 
 # 从当前主题派生文字/高亮色
 func _refresh_theme_colors() -> void:
@@ -80,6 +192,7 @@ func set_side(s: int) -> void:
 	_display_total = 0.0
 	_opp_total = 0
 	_prev_breakdown = {}
+	_bar_tracker.reset()
 	queue_redraw()
 
 # 设置角色名（PvE/联机模式下用）；传空串恢复默认"黑方/白方"
@@ -148,6 +261,7 @@ func set_session(s: GameSession) -> void:
 	_display_total = 0.0
 	_opp_total = 0
 	_prev_breakdown = {}
+	_bar_tracker.reset()
 	_score_history.clear()  # 清空总分历史（曲线图）
 	queue_redraw()
 
@@ -212,6 +326,8 @@ func _process(delta: float) -> void:
 	# 呼吸边框持续重绘
 	if session and not session.game_over and session.to_move == side:
 		queue_redraw()
+	# 部署按钮：位置/文字/可用性随行棋方与特种状态变化
+	_update_deploy_button()
 
 func _draw() -> void:
 	if not _theme or not session:
@@ -248,13 +364,13 @@ func _draw() -> void:
 	_draw_content(0, 0, w, h, my_bk)
 
 # 内容绘制 —— 三段式名片布局
-# 模块1：身份名片（头像+名称+兵力，横向） → 分隔线
+# 模块1：身份名片（头像+名称+兵力，横向）+ 特种部队按钮 → 分隔线
 # 模块2：总分焦点（大字居中）            → 分隔线
 # 模块3：明细列表（5行整齐排列）
 func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 	var is_active: bool = (session.to_move == side) and not session.game_over
-	# 内容总高度（三段式）
-	var content_h: float = 540.0  # 含曲线图区域
+	# 内容总高度（三段式 + 特种按钮行）
+	var content_h: float = 555.0  # 含曲线图区域 + 特种按钮行（原 540 + 15）
 	var oy: float = max(0.0, (h - content_h) * 0.5)  # 垂直居中偏移
 
 	var name_str: String = _role_name if _role_name != "" else ("黑 方" if side == Const.BLACK else "白 方")
@@ -275,7 +391,7 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 	# 行棋方动态流光、低时间闪烁
 	_draw_timer_bar(x + pad, y + oy + 6, w - pad * 2, 12.0, is_active)
 
-	# ===== 模块1：身份名片（y+oy+22 ~ y+oy+100）=====
+	# ===== 模块1：身份名片（y+oy+22 ~ y+oy+100）+ 特种按钮行（y+oy+82 ~ y+oy+108）=====
 	# 头像在左，名称+兵力在右，横向名片式
 	var av_cx: float = x + pad + 26  # 头像中心 x（左侧）
 	var av_cy: float = y + oy + 50   # 头像中心 y（下移避让计时条）
@@ -289,16 +405,17 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 	var name_fs: int = _theme.score_font_size + 6
 	font.draw_string(get_canvas_item(), Vector2(text_x, y + oy + 44), name_str, HORIZONTAL_ALIGNMENT_LEFT, -1, name_fs, lead_color)
 	var pieces_left: int = session.pieces_left(side)
-	var pieces_str: String = "兵力 %d / %d" % [pieces_left, Const.PIECE_LIMIT]
+	var pieces_str: String = "兵力 %d / %d" % [pieces_left, session.piece_limit]
 	font.draw_string(get_canvas_item(), Vector2(text_x, y + oy + 68), pieces_str, HORIZONTAL_ALIGNMENT_LEFT, -1, _theme.coord_font_size + 2, _c_dim)
+	# 注：特种部队按钮为子节点 Button，由 _update_deploy_button() 定位在 y+oy+82 处
 
 	# 分隔线1
-	var sep1_y: float = y + oy + 102
+	var sep1_y: float = y + oy + 112
 	_draw_section_sep(x + pad, sep1_y, w - pad * 2)
 
-	# ===== 模块2：总分焦点（y+oy+102 ~ y+oy+228）=====
+	# ===== 模块2：总分焦点（y+oy+112 ~ y+oy+238）=====
 	# "总 分" 标签
-	font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 134), "总  分", HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, _c_dim)
+	font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 144), "总  分", HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, _c_dim)
 	# 总分大字（闪烁+放大+数字滚动）
 	var total_str: String = str(int(round(_display_total)))
 	var total_size: int = int((_theme.score_total_font_size + 10) * _flash_scale)
@@ -307,24 +424,24 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 	var total_color: Color = lead_color
 	if _flash > 0:
 		total_color = total_color.lerp(_flash_color, _flash)
-	font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 184), total_str, HORIZONTAL_ALIGNMENT_CENTER, -1, total_size, total_color)
+	font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 194), total_str, HORIZONTAL_ALIGNMENT_CENTER, -1, total_size, total_color)
 	# AI 思考中提示（总分下方，脉冲透明度）
 	if _thinking:
 		var pulse: float = 0.5 + 0.5 * sin(_time * 4.0)
 		var think_color: Color = _c_highlight
 		think_color.a = 0.5 + 0.45 * pulse
-		font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 210), "思 考 中 …", HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, think_color)
+		font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 220), "思 考 中 …", HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, think_color)
 
 	# 分隔线2
-	var sep2_y: float = y + oy + 228
+	var sep2_y: float = y + oy + 238
 	_draw_section_sep(x + pad, sep2_y, w - pad * 2)
 
-	# ===== 模块3：得分构成分数条（y+oy+228 ~ y+oy+420）=====
+	# ===== 模块3：得分构成分数条（y+oy+238 ~ y+oy+430）=====
 	# 合并：占领分=活子+围空，防御分=歼灭+围困，战损分=战损
-	_draw_score_bars(x + pad, y + oy + 240, w - pad * 2, 150.0, bk)
+	_draw_score_bars(x + pad, y + oy + 250, w - pad * 2, 150.0, bk)
 
 	# 分隔线3
-	var sep3_y: float = y + oy + 400
+	var sep3_y: float = y + oy + 410
 	_draw_section_sep(x + pad, sep3_y, w - pad * 2)
 
 	# ===== 模块4：总分变化曲线图 =====
@@ -343,15 +460,16 @@ func _draw_score_bars(x: float, y: float, w: float, h: float, bk) -> void:
 	var occ: int = bk.occupation()      # 活子 + 围空
 	var def: int = bk.defense()         # 歼灭 + 围困
 	var cas: int = abs(bk.casualty())   # 战损（取绝对值显示量）
+	# 分数条长度基于固定参考上限（occ:80, def:40, cas:30），分数从0增长时条形动态变长
 	# 颜色（与主题协调：暖金/青绿/暗红）
 	var c_occ := Color(1.0, 0.72, 0.28, 0.92)   # 占领 - 暖金
 	var c_def := Color(0.40, 0.78, 0.55, 0.92)  # 防御 - 青绿
 	var c_cas := Color(0.72, 0.28, 0.22, 0.92)  # 战损 - 暗红
 	# 三条分数条参数
 	var items: Array = [
-		{"name": "占领分", "value": occ, "color": c_occ, "sign": 1},
-		{"name": "防御分", "value": def, "color": c_def, "sign": 1},
-		{"name": "战损分", "value": cas, "color": c_cas, "sign": -1},  # 战损为扣分
+		{"name": "占领分", "value": occ, "color": c_occ, "sign": 1, "max_key": "occ"},
+		{"name": "防御分", "value": def, "color": c_def, "sign": 1, "max_key": "def"},
+		{"name": "战损分", "value": cas, "color": c_cas, "sign": -1, "max_key": "cas"},  # 战损为扣分
 	]
 	# 条形区域布局
 	var bar_area_y: float = y + label_fs + 14
@@ -362,9 +480,7 @@ func _draw_score_bars(x: float, y: float, w: float, h: float, bk) -> void:
 	var val_w: float = 40.0                          # 分数列宽度
 	var bar_x: float = x + name_w                     # 进度条起始 x
 	var bar_w: float = w - name_w - val_w            # 进度条宽度
-	# 比例基准：取三数最大值（保证至少 1，且条形不会过长）
-	var max_val: int = max(max(occ, def), cas)
-	max_val = max(max_val, 1)
+	# 动态基准由 _bar_tracker 维护（已在 on_scores_changed 中更新，不依赖渲染）
 	# 背景/边框色
 	var bg_c := Color(0, 0, 0, 0.35)
 	var border_c := _c_dim
@@ -376,9 +492,8 @@ func _draw_score_bars(x: float, y: float, w: float, h: float, bk) -> void:
 		font.draw_string(get_canvas_item(), Vector2(x, row_y + bar_h * 0.5 + label_fs * 0.35), item.name, HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, _c_text)
 		# 进度条背景槽
 		draw_rect(Rect2(bar_x, row_y, bar_w, bar_h), bg_c, true)
-		# 进度条填充（按比例）
-		var ratio: float = float(item.value) / float(max_val)
-		ratio = clamp(ratio, 0.0, 1.0)
+		# 进度条填充：基于该分量历史最大值的比例（条形随分数增长而变长）
+		var ratio: float = _bar_tracker.get_ratio(item.max_key, item.value)
 		var fill_w: float = bar_w * ratio
 		if fill_w > 0:
 			# 主体填充

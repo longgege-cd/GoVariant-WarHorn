@@ -46,7 +46,7 @@ func _do_choose(session: GameSession) -> Dictionary:
 func _find_best_capture(session: GameSession, my_color: int) -> Dictionary:
 	var best: Dictionary = {}
 	var best_cap: int = 0
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	for r in range(b.size):
 		for c in range(b.size):
 			if b.get_at(r, c) != Const.EMPTY:
@@ -61,7 +61,7 @@ func _find_best_capture(session: GameSession, my_color: int) -> Dictionary:
 
 # 寻找救援点（己方组群仅剩1气时，尝试连气）
 func _find_rescue(session: GameSession, my_color: int) -> Dictionary:
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	for g in b.all_groups():
 		if g.color != my_color:
 			continue
@@ -74,7 +74,6 @@ func _find_rescue(session: GameSession, my_color: int) -> Dictionary:
 			# 检查落子后是否真的增加了气
 			var test = GoRules.try_move(b.clone(), lib[0], lib[1], my_color, session.ko_point)
 			if test.legal:
-				var new_g: Dictionary = b.clone().group_at(lib[0], lib[1])
 				# 用 test 后的 board 检查
 				var test_board = b.clone()
 				GoRules.try_move(test_board, lib[0], lib[1], my_color, session.ko_point)
@@ -86,7 +85,7 @@ func _find_rescue(session: GameSession, my_color: int) -> Dictionary:
 
 # 寻找特种部队部署点（敌境空点）
 func _find_deploy_pos(session: GameSession, my_color: int) -> Dictionary:
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	var candidates: Array = []
 	for r in range(b.size):
 		for c in range(b.size):

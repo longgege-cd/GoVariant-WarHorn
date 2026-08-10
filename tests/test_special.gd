@@ -14,27 +14,36 @@ func run(t: TestFramework) -> void:
 	t.expect_eq(s.special.uses_left(Const.BLACK), 1, "剩余1次")
 	t.expect_eq(s.pieces_left(Const.BLACK), Const.PIECE_LIMIT, "部署不消耗兵力")
 
-	# 2. 伏击：白落在黑隐子点 → 白战损 -1，隐子现形，白子未落
+	# 2. 弹子：白落在黑隐子点 → 隐子现形，白子随机弹至周围八格（优先活形）
+	#    规则350：重叠处理 → 隐子现形，对手落子随机弹至周围八格；
+	#             八格均不可落子则退回重下（不计战损、不切回合）
 	s = GameSession.new(Const.KOMI_DEFAULT, true)
 	s.deploy_special(Const.BLACK, 5, 5)
 	# 轮到白
 	out = s.play_move(Const.WHITE, 5, 5)  # 撞隐子
-	t.expect(out.ambush, "触发伏击")
-	t.expect_eq(s.counters[Const.WHITE].ambushed, 1, "白伏击战损 +1计数")
-	t.expect_eq(s.board.get_at(5, 5), Const.BLACK, "隐子仍在(现形)")
-	# 白子未落（盘上无白子在5,5）
-	# 战损 -1
+	t.expect(out.ok, "弹子触发：白撞隐子后行棋仍 ok（弹子成功或退回）")
+	t.expect(out.bounced, "out.bounced=true（弹子事件）")
+	t.expect_eq(out.overlap_pos, Vector2i(5, 5), "overlap_pos=(5,5)")
+	# 隐子已现形
+	t.expect(not s.special.has_hidden_at(Vector2i(5, 5)), "隐子已现形")
+	t.expect_eq(s.board.get_at(5, 5), Const.BLACK, "隐子仍在(现形为黑子)")
+	# 弹子点应在周围八格之一
+	if out.bounced and out.placed is Vector2i:
+		var bp: Vector2i = out.placed
+		var dr: int = abs(bp.y - 5)
+		var dc: int = abs(bp.x - 5)
+		t.expect(dr <= 1 and dc <= 1 and (dr + dc) > 0, "弹子点在周围八格之一")
+		t.expect_eq(s.board.get_at(bp.y, bp.x), Const.WHITE, "白子已落弹子点")
+	# 不计战损（弹子无战损）
 	var sc = s.scores()
-	t.expect_eq(sc.white.casualty_ambush, -1, "白伏击战损 -1")
-	# 隐子现形
-	t.expect(not s.special.hidden_at(Vector2i(5, 5)).is_empty() == false, "隐子已现形")  # hidden_at 返回空=已现形
-	t.expect(not s.special.get_special_at(Vector2i(5, 5)).hidden, "现形标记")
+	t.expect_eq(sc.white.casualty_loss, 0, "弹子不计战损")
+	t.expect_eq(sc.white.casualty_special, 0, "弹子不计特种战损")
 
-	# 3. 邻接暴露：白落在隐子四邻 → 隐子现形，无伏击
+	# 3. 邻接暴露：白落在隐子四邻 → 隐子现形，无弹子
 	s = GameSession.new(Const.KOMI_DEFAULT, true)
 	s.deploy_special(Const.BLACK, 5, 5)
 	out = s.play_move(Const.WHITE, 5, 6)  # 邻接
-	t.expect(not out.ambush, "邻接非伏击")
+	t.expect(not out.bounced, "邻接非弹子")
 	t.expect(out.revealed.size() >= 1, "隐子因邻接现形")
 	t.expect_eq(s.board.get_at(5, 6), Const.WHITE, "白子正常落下")
 

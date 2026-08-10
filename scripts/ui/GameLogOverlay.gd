@@ -145,8 +145,8 @@ func _action_label(e: Dictionary) -> String:
 		return "虚手"
 	if e.get("deployed", false):
 		return "部署特种"
-	if e.get("ambush", false):
-		return "落子·伏击"
+	if e.get("bounced", false):
+		return "落子·弹子"
 	return "落子"
 
 func _pos_label(e: Dictionary) -> String:

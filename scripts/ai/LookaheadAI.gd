@@ -15,7 +15,7 @@ const MAX_CANDIDATES: int = 15  # 每层最大候选数
 
 func _do_choose(session: GameSession) -> Dictionary:
 	var my_color: int = session.to_move
-	# 获取排序后的候选移动
+	# 获取排序后的候选移动（基于 AI 视角，不含对手隐子）
 	var candidates: Array = _ranked_candidates(session, my_color)
 	if candidates.is_empty():
 		return {"type": "pass", "row": -1, "col": -1, "reason": "无合法点"}
@@ -31,7 +31,8 @@ func _do_choose(session: GameSession) -> Dictionary:
 	for m in candidates:
 		if _time_up():
 			break
-		var clone: GameSession = session.clone()
+		# 使用 AI 视角克隆搜索（对手隐子已移除）
+		var clone: GameSession = session.clone_for_ai(my_color)
 		var out: Dictionary = clone.play_move(my_color, m.row, m.col)
 		if not out.ok:
 			continue
@@ -75,9 +76,10 @@ func _minimize(session: GameSession, alpha: float, beta: float, depth: int) -> f
 	return worst
 
 # 获取排序后的候选移动（按启发式价值降序）
+# 使用 AI 视角棋盘（对手隐子视为空点）
 func _ranked_candidates(session: GameSession, c: int) -> Array:
 	var moves: Array = []
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	for r in range(b.size):
 		for c2 in range(b.size):
 			if b.get_at(r, c2) != Const.EMPTY:
@@ -92,7 +94,7 @@ func _ranked_candidates(session: GameSession, c: int) -> Array:
 
 # 寻找特种部队部署点（敌境空点）
 func _find_deploy_pos(session: GameSession, my_color: int) -> Dictionary:
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	var candidates: Array = []
 	for r in range(b.size):
 		for c in range(b.size):

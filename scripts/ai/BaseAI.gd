@@ -33,10 +33,27 @@ func _do_choose(_session: GameSession) -> Dictionary:
 func _time_up() -> bool:
 	return (Time.get_ticks_msec() / 1000.0) - _start_time >= search_budget_sec
 
+# 获取 AI 视角的棋盘克隆：对手的未现形隐子视为空点（规则：隐子对对手不可见）
+# 用于 AI 决策（候选生成/合法性/价值评估），不影响真实 session
+func _ai_view_board(session: GameSession) -> BoardModel:
+	var b: BoardModel = session.board.clone()
+	if not session.special.enabled:
+		return b
+	var opp: int = Const.opponent(color)
+	for p in session.special.pieces:
+		if p.captured or not p.hidden:
+			continue
+		if p.color != opp:
+			continue
+		# 对手隐子 → 在 AI 视图中视为空点
+		b.set_at(p.pos.y, p.pos.x, Const.EMPTY)
+	return b
+
 # 获取所有合法落子点（随机顺序，避免AI总下同一位置）
+# 使用 AI 视角棋盘（对手隐子视为空点），保证 AI 不知晓隐子位置
 func _legal_moves(session: GameSession) -> Array:
 	var moves: Array = []
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	for r in range(b.size):
 		for c in range(b.size):
 			if b.get_at(r, c) != Const.EMPTY:
@@ -55,8 +72,9 @@ func _evaluate(session: GameSession, eval_color: int) -> float:
 	return float(my - opp)
 
 # 快速评估某落子点的即时价值（用于启发式排序）
+# 使用 AI 视角棋盘，保证评估不依赖对手隐子信息
 func _move_value(session: GameSession, row: int, col: int) -> int:
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	var value: int = 0
 	# 1. 提子价值：模拟落子看能提多少
 	var test = GoRules.try_move(b.clone(), row, col, session.to_move, session.ko_point)

@@ -23,6 +23,8 @@ var history_panel: ScrollContainer
 var _pause_menu: Control = null  # ESC 暂停菜单实例
 var _deploy_mode: bool = false
 var _special_enabled: bool = true  # 默认开启特种部队（可在菜单切换）
+var _komi: float = Const.KOMI_DEFAULT  # 贴目（由 StartMenu 传入）
+var _piece_limit: int = Const.PIECE_LIMIT  # 每方兵力上限（由 StartMenu 传入）
 # PvE 模式
 var _pve_mode: bool = false
 var _ai_difficulty: int = 0  # AIManager.Difficulty.EASY
@@ -32,7 +34,7 @@ var _ai_thinking: bool = false  # AI 正在思考（防止重入）
 var _ai_task: Variant = null  # AIManager.AITask 异步任务（思考中）
 # 联机模式
 var _online_mode: bool = false  # 是否联机对战
-# 对局日志（按 L 键查看）：每条记录 {ply, color, passed, deployed, ambush, placed, captures, score_before, score_after}
+# 对局日志（按 L 键查看）：每条记录 {ply, color, passed, deployed, bounced, placed, captures, score_before, score_after}
 var _log_entries: Array = []
 var _prev_scores: Dictionary = {}  # 上一手之前的分数 {black: int, white: int}，用于计算得分变化
 var _log_overlay: Control = null  # 当前的日志覆盖弹窗实例
@@ -148,6 +150,9 @@ func _layout() -> void:
 	control_panel.online_quit_pressed.connect(_on_online_quit)
 	control_panel.menu_pressed.connect(_on_pause_menu)
 	board_view.cell_clicked.connect(_on_cell_clicked)
+	# 双方得分板的部署按钮（部署特种部队的入口已迁移至得分板）
+	black_score_panel.deploy_special_pressed.connect(_on_deploy_button)
+	white_score_panel.deploy_special_pressed.connect(_on_deploy_button)
 	# 特效连接：EffectsPlayer 信号 → BoardView 叠加层
 	EffectsPlayer.effect_started.connect(_on_effect_started)
 
@@ -244,10 +249,17 @@ func _on_mode_selected(mode: String, difficulty: int) -> void:
 		stop_pve()
 
 func _new_game() -> void:
-	session = GameSession.new(Const.KOMI_DEFAULT, _special_enabled)
+	session = GameSession.new(_komi, _special_enabled, _piece_limit)
 	board_view.set_session(session)
 	black_score_panel.set_session(session)
 	white_score_panel.set_session(session)
+	# 隐子视角：PvE 玩家执黑只看己方隐子；联机仅看本地颜色方隐子；PvP 全可见（观战视角）
+	if _pve_mode:
+		board_view.observer_view = Const.BLACK
+	elif _online_mode:
+		board_view.observer_view = NetworkManager.local_color
+	else:
+		board_view.observer_view = -1
 	session.move_committed.connect(_on_move_committed)
 	session.scores_changed.connect(_on_scores_changed)
 	session.game_ended.connect(_on_game_ended)
@@ -289,7 +301,7 @@ func _new_game() -> void:
 	if white_score_panel != null and white_score_panel.has_method("reload_avatar"):
 		white_score_panel.reload_avatar()
 
-# 根据当前模式（PvP/PvE/联机）更新得分板角色名
+# 根据当前模式（PvP/PvE/联机）更新得分板角色名与可控性
 #   PvP     → 黑方 / 白方
 #   PvE     → 你 / AI·难度
 #   联机    → 你 / 对手（按本地颜色分配）
@@ -300,19 +312,27 @@ func _update_role_names() -> void:
 		# PvE: 玩家执黑=你，AI执白=AI·难度
 		black_score_panel.set_role_name("你")
 		white_score_panel.set_role_name("AI·" + AIManager.difficulty_name(_ai_difficulty))
+		black_score_panel.set_controllable(true)
+		white_score_panel.set_controllable(false)
 	elif _online_mode:
 		# 联机: 本地颜色方=你，对端=对手
 		var local_c: int = NetworkManager.local_color
 		if local_c == Const.BLACK:
 			black_score_panel.set_role_name("你")
 			white_score_panel.set_role_name("对手")
+			black_score_panel.set_controllable(true)
+			white_score_panel.set_controllable(false)
 		else:
 			black_score_panel.set_role_name("对手")
 			white_score_panel.set_role_name("你")
+			black_score_panel.set_controllable(false)
+			white_score_panel.set_controllable(true)
 	else:
-		# PvP: 默认黑方/白方
+		# PvP: 默认黑方/白方，双方均可操作
 		black_score_panel.set_role_name("")
 		white_score_panel.set_role_name("")
+		black_score_panel.set_controllable(true)
+		white_score_panel.set_controllable(true)
 
 func _on_new_game() -> void:
 	_deploy_mode = false
@@ -321,7 +341,7 @@ func _on_new_game() -> void:
 	if _online_mode and NetworkManager.is_host():
 		# 联机主机：本地新建 + 广播配置给客户端
 		_new_game()
-		NetSync.host_broadcast_new_game(Const.KOMI_DEFAULT, _special_enabled)
+		NetSync.host_broadcast_new_game(_komi, _special_enabled, _piece_limit)
 	elif _online_mode and not NetworkManager.is_host():
 		# 联机客户端：新对局由主机发起，客户端等待广播
 		_show_status("等待主机开始新对局…")
@@ -375,7 +395,64 @@ func _on_undo() -> void:
 	if _online_mode:
 		_show_status("联机模式不支持悔棋")
 		return
-	_show_status("悔棋功能待实现")
+	# PvE 模式：AI 思考中禁用悔棋（避免与异步线程冲突）
+	if _pve_mode and _ai_thinking:
+		_show_status("AI 思考中，请稍候")
+		return
+	if session == null or not session.can_undo():
+		_show_status("无可悔棋历史")
+		return
+	# PvE 模式：连悔两手（AI + 玩家），让玩家可重新决策
+	var undo_count: int = 1
+	if _pve_mode and _ai != null:
+		# 需悔到玩家上一次行棋前：AI 一手 + 玩家一手 = 2 手
+		# 但若玩家刚虚手/行棋后 AI 未走，只悔 1 手
+		if session.to_move == Const.BLACK and session.ply >= 2:
+			undo_count = 2
+	# 限制：不超过栈深度
+	var actual: int = 0
+	for i in undo_count:
+		if not session.can_undo():
+			break
+		var out: Dictionary = session.undo()
+		if not out.ok:
+			break
+		actual += 1
+	if actual == 0:
+		_show_status("无可悔棋历史")
+		return
+	# 悔棋后刷新视图（move_committed 信号已自动刷新，但 last_move 需重置）
+	if board_view != null:
+		# 重置 last_move 标记到当前最后一手（若有日志）
+		if not _log_entries.is_empty() and actual <= _log_entries.size():
+			# 弹出被悔的日志条目
+			for i in actual:
+				if not _log_entries.is_empty():
+					_log_entries.pop_back()
+		# 更新 last_move 显示
+		if not _log_entries.is_empty():
+			var last = _log_entries[-1]
+			if last.get("placed", Vector2i(-1, -1)).x >= 0:
+				board_view.last_move = last.placed
+			else:
+				board_view.last_move = Vector2i(-1, -1)
+		else:
+			board_view.last_move = Vector2i(-1, -1)
+		board_view.queue_redraw()
+	# 更新围空/围困状态追踪（避免误触特效）
+	_prev_enclosures = session.cached_enclosures().duplicate(true)
+	_prev_sieged_stones = _collect_sieged_stones()
+	# 重置分数快照
+	var sc: Dictionary = session.scores()
+	_prev_scores = {
+		"black": sc.black.total(),
+		"white": sc.white.total(),
+	}
+	# 计时器切回当前行棋方
+	if _timer != null and not session.game_over:
+		_timer.switch_to(session.to_move)
+	_show_status("已悔棋 %d 手" % actual)
+	_update_controls()
 
 func _on_cycle_theme() -> void:
 	ThemeManager.cycle_next()
@@ -423,17 +500,27 @@ func _on_cell_clicked(row: int, col: int) -> void:
 
 func _on_move_committed(outcome: Dictionary) -> void:
 	board_view.on_move_committed(outcome)
-	# 记录对局日志（在分数已更新后取 after）
-	_record_log_entry(outcome)
+	# 悔棋：仅刷新视图，不记日志/不触发特效/不切计时器（由 _on_undo 统一处理）
+	var is_undo: bool = outcome.get("type", "") == "undo"
+	if is_undo:
+		_update_status()
+		_update_controls()
+		return
+	# 撞隐子退回（overlap_fail）：仅处理现形特效，不记日志、不切计时器（未成手）
+	var is_overlap_fail: bool = outcome.get("type", "") == "overlap_fail"
+	if not is_overlap_fail:
+		# 记录对局日志（在分数已更新后取 after）
+		_record_log_entry(outcome)
 	# 特效触发（mover_color 已存入 outcome，避免依赖 session.to_move 已切换）
 	var mover_color: int = outcome.get("mover_color", session.to_move)
-	if outcome.get("ambush", false):
-		EffectsPlayer.play_ambush(outcome.placed, mover_color)
+	if outcome.get("bounced", false):
+		EffectsPlayer.play_bounce(outcome.overlap_pos, outcome.placed, mover_color)
 	if outcome.captures.size() > 0:
 		EffectsPlayer.play_capture(outcome.captures, outcome.captured_color)
 	if outcome.get("deployed", false):
-		EffectsPlayer.play_special_deploy(mover_color)
-	if outcome.placed is Vector2i and outcome.placed.x >= 0 and not outcome.ambush:
+		# 部署特种部队：用部署特效（己方视角下在位置画，对方视角下画在棋盘中心避免泄露）
+		EffectsPlayer.play_special_deploy(mover_color, outcome.placed)
+	elif outcome.placed is Vector2i and outcome.placed.x >= 0 and not outcome.bounced:
 		EffectsPlayer.play_move(outcome.placed, mover_color)
 	for r in outcome.get("revealed", []):
 		EffectsPlayer.play_reveal(r.pos, r.get("revealed_reason", ""))
@@ -442,11 +529,13 @@ func _on_move_committed(outcome: Dictionary) -> void:
 	_update_status()
 	_update_controls()
 	# 计时器切换到新行棋方；行棋成功重置该方连续超时计数
-	if _timer != null and not session.game_over:
+	# overlap_fail 未成手（不切回合），跳过计时器切换
+	if _timer != null and not session.game_over and not is_overlap_fail:
 		_timer.reset_timeout_count(mover_color)
 		_timer.switch_to(session.to_move)
-	# PvE：轮到 AI 时自动行棋
-	_maybe_trigger_ai()
+	# PvE：轮到 AI 时自动行棋（overlap_fail 时 AI 由 _ai_play 重试循环处理）
+	if not is_overlap_fail:
+		_maybe_trigger_ai()
 
 # 单次超时：执行 pass（不直接判负）
 # 联机模式：本地超时也需通过 NetSync 同步 pass
@@ -493,13 +582,21 @@ func _record_log_entry(outcome: Dictionary) -> void:
 	var cap_count: int = 0
 	if outcome.has("captures") and outcome.captures is Array:
 		cap_count = outcome.captures.size()
+	# 隐子位置保密：对方未现形特种部队的部署位置不记录到日志（避免按 L 查看日志时泄露）
+	var placed: Vector2i = outcome.get("placed", Vector2i(-1, -1))
+	if placed.x >= 0 and outcome.get("deployed", false):
+		var sp: Dictionary = session.special.get_special_at(placed)
+		if not sp.is_empty() and sp.get("hidden", false):
+			var observer: int = board_view.observer_view if board_view != null else -1
+			if observer != -1 and sp.color != observer:
+				placed = Vector2i(-1, -1)  # 对方未现形隐子 → 隐藏位置
 	_log_entries.append({
 		"ply": outcome.get("ply", session.ply),
 		"color": mover_color,
 		"passed": outcome.get("passed", false),
 		"deployed": outcome.get("deployed", false),
-		"ambush": outcome.get("ambush", false),
-		"placed": outcome.get("placed", Vector2i(-1, -1)),
+		"bounced": outcome.get("bounced", false),
+		"placed": placed,
 		"captures": cap_count,
 		"score_before": before,
 		"score_after": after,
@@ -716,16 +813,27 @@ func _ai_play() -> void:
 		_ai_thinking = false
 		_set_ai_thinking(false)
 		return
-	# 应用 AI move 到 session
+	# 应用 AI move 到 session（撞隐子退回时重试，最多 5 次）
 	var color: int = _ai_color
 	var out: Dictionary
-	match move.get("type", "pass"):
-		"move":
-			out = session.play_move(color, move.row, move.col)
-		"deploy":
-			out = session.deploy_special(color, move.row, move.col)
-		_:
-			out = session.do_pass(color)
+	var attempts: int = 0
+	while attempts < 5:
+		attempts += 1
+		match move.get("type", "pass"):
+			"move":
+				out = session.play_move(color, move.row, move.col)
+			"deploy":
+				out = session.deploy_special(color, move.row, move.col)
+			_:
+				out = session.do_pass(color)
+		# 撞隐子退回（overlap_fail）：AI 不知晓隐子，重新决策
+		if out.ok or out.get("type", "") != "overlap_fail":
+			break
+		Log.d("AI 撞隐子退回，重新决策 (attempt %d)" % attempts)
+		# 重新决策（基于更新后的 session）
+		if session.to_move != color or session.game_over:
+			break
+		move = _ai.choose_move(session)
 	_ai_thinking = false
 	_set_ai_thinking(false)
 	if not out.ok:
@@ -748,8 +856,8 @@ func _effect_duration(effect_id: String) -> float:
 	match effect_id:
 		"capture":
 			return 0.9
-		"ambush":
-			return 0.6
+		"bounce":
+			return 0.7
 		"move":
 			return 0.4
 		"special_deploy":
@@ -788,6 +896,11 @@ func _show_error(_msg: String) -> void:
 
 func _update_controls() -> void:
 	control_panel.update_state(session, _deploy_mode)
+	# 同步部署模式状态到双方得分板（按钮文字/可用性随之更新）
+	if black_score_panel != null:
+		black_score_panel.update_deploy_state(_deploy_mode)
+	if white_score_panel != null:
+		white_score_panel.update_deploy_state(_deploy_mode)
 
 # ===== 键盘快捷键 =====
 func _unhandled_input(event: InputEvent) -> void:
@@ -879,9 +992,11 @@ func _on_net_closed() -> void:
 		NetSync.active = false
 		control_panel.update_online_state(false)
 
-func _on_net_new_game_requested(komi: float, special_enabled: bool) -> void:
+func _on_net_new_game_requested(komi: float, special_enabled: bool, piece_limit: int = Const.PIECE_LIMIT) -> void:
 	# 客户端收到主机的新对局配置
 	_special_enabled = special_enabled
+	_komi = komi
+	_piece_limit = piece_limit
 	_new_game()
 	_show_status("新对局开始（贴目 %.1f）· 您执白方" % komi)
 
@@ -891,10 +1006,19 @@ func _on_net_sync_mismatch() -> void:
 
 # ===== 启动配置（由 Main 调用）=====
 # 注：_ready() 已用默认空配置初始化 timer，此处需用真实 time_setting 重置 timer
-func setup_game(mode: String, difficulty: int, time_setting: Dictionary = {}) -> void:
+func setup_game(mode: String, difficulty: int, time_setting: Dictionary = {}, options: Dictionary = {}) -> void:
 	_time_setting = time_setting
+	# 应用对局选项（贴目、兵力上限）—— 必须在 _reinit_timer 之前设置，
+	# 因为 _ready() 已调用 _new_game() 用默认值创建 session，
+	# 这里覆盖字段后调用 _new_game() 重建以应用新配置
+	if options.has("komi"):
+		_komi = options.komi
+	if options.has("piece_limit"):
+		_piece_limit = options.piece_limit
 	# 用真实配置重置计时器（覆盖 _ready 中默认的无限时间）
 	_reinit_timer()
+	# 重建 session 以应用新的 komi/piece_limit（_ready 中的 _new_game 用了默认值）
+	_new_game()
 	match mode:
 		"pve":
 			start_pve(difficulty)

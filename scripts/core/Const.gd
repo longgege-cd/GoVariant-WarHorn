@@ -7,14 +7,14 @@ class_name Const
 
 const BOARD_SIZE: int = 19
 const BORDER_ROW: int = 9          # 0基：第10行
-const PIECE_LIMIT: int = 171       # 每方兵力上限
+const PIECE_LIMIT: int = 171       # 每方兵力上限（默认值，可在对局时覆盖）
 
 # 棋色
 const EMPTY: int = 0
 const BLACK: int = 1
 const WHITE: int = 2
 
-const KOMI_DEFAULT: float = 2.5    # 黑方贴目
+const KOMI_DEFAULT: float = 3.5    # 黑方贴目（评估推荐值）
 
 # 领土分区枚举
 enum Zone { BLACK, BORDER, WHITE }

@@ -60,9 +60,9 @@ func local_resign() -> void:
 		remote_resign.rpc_id(NetworkManager.remote_peer_id())
 
 # 主机发起新对局配置同步（主机权威）
-func host_broadcast_new_game(komi: float, special_enabled: bool) -> void:
+func host_broadcast_new_game(komi: float, special_enabled: bool, piece_limit: int = Const.PIECE_LIMIT) -> void:
 	if NetworkManager.is_online() and NetworkManager.is_host():
-		remote_new_game.rpc_id(NetworkManager.remote_peer_id(), komi, special_enabled)
+		remote_new_game.rpc_id(NetworkManager.remote_peer_id(), komi, special_enabled, piece_limit)
 
 # ===== 对端 RPC 接收 =====
 # any_peer: 任意对端可调用；call_remote: 不本地执行；reliable: 可靠传输
@@ -112,12 +112,12 @@ func remote_resign() -> void:
 	session.game_ended.emit(result)
 
 @rpc("authority", "call_remote", "reliable")
-func remote_new_game(komi: float, special_enabled: bool) -> void:
+func remote_new_game(komi: float, special_enabled: bool, piece_limit: int = Const.PIECE_LIMIT) -> void:
 	# 主机权威广播新对局配置
 	if not NetworkManager.is_host():
-		new_game_requested.emit(komi, special_enabled)
+		new_game_requested.emit(komi, special_enabled, piece_limit)
 
 # 同步失败信号（用于触发状态纠偏或断线提示）
 signal sync_mismatch
 # 主机发起的新对局请求（客户端接收）
-signal new_game_requested(komi: float, special_enabled: bool)
+signal new_game_requested(komi: float, special_enabled: bool, piece_limit: int)

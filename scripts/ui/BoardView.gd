@@ -19,7 +19,7 @@ var show_zone_hints: bool = true
 var show_territory: bool = true
 var show_siege_markers: bool = true
 var show_last_move: bool = true
-var observer_view: int = -1  # -1=观战(全可见)；否则仅该方视角隐子可见
+var observer_view: int = -1  # -1=观战(全可见)；否则仅该方视角隐子可见，对手隐子隐藏
 # 特效层叠加（用于动画）
 var effect_overlays: Array = []  # Array[Dictionary] {type, ...}
 
@@ -54,6 +54,20 @@ func on_move_committed(outcome: Dictionary) -> void:
 	else:
 		last_move = Vector2i(-1, -1)
 	queue_redraw()
+
+# 检查某位置是否是当前观察视角下不可见的隐子（对方未现形特种部队）
+# 用于避免 last_move 标记/落子特效等泄露特种部队位置
+func _is_hidden_from_observer(pos: Vector2i) -> bool:
+	if observer_view == -1:
+		return false  # 观战视角，全可见
+	if session == null:
+		return false
+	var sp: Dictionary = session.special.get_special_at(pos)
+	if sp.is_empty():
+		return false  # 非特种部队
+	if not sp.get("hidden", false):
+		return false  # 已现形
+	return sp.color != observer_view  # 对方未现形隐子 → 不可见
 
 # 添加特效叠加层（带过期时间）
 func add_effect_overlay(overlay: Dictionary) -> void:
@@ -264,6 +278,15 @@ func _draw_stones() -> void:
 			var v: int = board.get_at(r, c)
 			if v == Const.EMPTY:
 				continue
+			# 隐子对对手不可见（规则：隐子对对手不可见）
+			# observer_view=-1=观战全可见；否则仅 observer_view 方可看见己方隐子
+			var piece_pos := Vector2i(c, r)
+			var sp: Dictionary = session.special.get_special_at(piece_pos)
+			if not sp.is_empty() and sp.get("hidden", false):
+				# 是隐子且未现形
+				if observer_view != -1 and sp.color != observer_view:
+					# 对该视角不可见 → 跳过绘制（视为空点）
+					continue
 			var pos: Vector2 = _cell_to_pixel(r, c)
 			var radius: float = _theme.stone_radius()
 			# 发光（赛博朋克）
@@ -315,16 +338,32 @@ func _draw_special_marker(pos: Vector2, radius: float, color: int) -> void:
 	draw_circle(pos, s * 0.4, star_color)
 
 func _draw_siege_markers() -> void:
-	# 标记被围困的组群（红色小圆点）- 使用缓存避免每次重绘重算
+	# 规则6.7：处于围困状态的棋子始终显示围困标记
+	# 标记：棋子中心的红色 ×
+	# 隐子位置保密：对方视角下不画围困标记（避免泄露特种部队位置）
 	for g in session.cached_sieged_groups():
 		for s in g.stones:
+			var s_pos := Vector2i(s.x, s.y)
+			if _is_hidden_from_observer(s_pos):
+				continue
 			var pos: Vector2 = _cell_to_pixel(s.y, s.x)
-			var off: Vector2 = Vector2(_theme.stone_radius() * 0.7, -_theme.stone_radius() * 0.7)
-			draw_circle(pos + off, _theme.siege_marker_size * 0.5, _theme.siege_marker_color)
+			_draw_siege_cross_icon(pos, _theme.stone_radius())
+
+# 围困标记：棋子中心的红色 ×
+func _draw_siege_cross_icon(center: Vector2, radius: float) -> void:
+	var cross_color: Color = Color(1.0, 0.15, 0.15, 0.95)  # 红色
+	var arm: float = radius * 0.225  # × 半臂长（缩小一半）
+	var lw: float = max(1.5, radius * 0.09)  # 线宽随棋子尺寸缩放
+	# 两条对角线交叉
+	draw_line(center - Vector2(arm, arm), center + Vector2(arm, arm), cross_color, lw)
+	draw_line(center - Vector2(arm, -arm), center + Vector2(arm, -arm), cross_color, lw)
 
 # 最后一手棋行列线高亮
 func _draw_last_move_lines() -> void:
 	if last_move.x < 0:
+		return
+	# 隐子位置保密：对方视角下不画 last_move 标记（避免泄露特种部队位置）
+	if _is_hidden_from_observer(last_move):
 		return
 	var margin: int = _theme.board_margin
 	var cs: int = _theme.cell_size
@@ -341,6 +380,9 @@ func _draw_last_move_lines() -> void:
 
 func _draw_last_move_marker() -> void:
 	if last_move.x < 0:
+		return
+	# 隐子位置保密：对方视角下不画 last_move 标记（避免泄露特种部队位置）
+	if _is_hidden_from_observer(last_move):
 		return
 	var pos: Vector2 = _cell_to_pixel(last_move.y, last_move.x)
 	var v: int = session.board.get_at(last_move.y, last_move.x)
@@ -389,8 +431,8 @@ func _draw_effect_overlays() -> void:
 		match type:
 			"capture":
 				_draw_capture_burst(ov, t)
-			"ambush":
-				_draw_ambush_flash(ov, t)
+			"bounce":
+				_draw_bounce_flash(ov, t)
 			"move":
 				_draw_move_pulse(ov, t)
 			"special_deploy":
@@ -443,19 +485,29 @@ func _draw_capture_burst(ov: Dictionary, t: float) -> void:
 				var fs: float = 3.0 * (1.0 - t * 0.5)  # 碎片逐渐缩小
 				draw_rect(Rect2(fx - fs * 0.5, fy - fs * 0.5, fs, fs), Color(1.0, 0.7, 0.2, frag_alpha), true)
 
-# 伏击闪光：红色扩散 + 中心红点
-func _draw_ambush_flash(ov: Dictionary, t: float) -> void:
-	var pos_v: Vector2i = ov.get("position", Vector2i(-1, -1))
-	if pos_v.x < 0:
+# 弹子特效：橙色扩散环 + 起点终点连接线（撞隐子后弹至八格之一）
+func _draw_bounce_flash(ov: Dictionary, t: float) -> void:
+	var from_v: Vector2i = ov.get("overlap_pos", Vector2i(-1, -1))
+	var to_v: Vector2i = ov.get("position", Vector2i(-1, -1))
+	if from_v.x < 0 or to_v.x < 0:
 		return
-	var pos: Vector2 = _cell_to_pixel(pos_v.y, pos_v.x)
+	var from_pos: Vector2 = _cell_to_pixel(from_v.y, from_v.x)
+	var to_pos: Vector2 = _cell_to_pixel(to_v.y, to_v.x)
 	var alpha: float = 1.0 - t
 	var base_r: float = _theme.stone_radius()
-	# 扩散红环
-	draw_arc(pos, base_r * (1.0 + t * 2.5), 0, TAU, 32, Color(1.0, 0.15, 0.1, alpha * 0.9), 3.0)
-	# 中心红光
-	if t < 0.5:
-		draw_circle(pos, base_r * 0.8, Color(1.0, 0.2, 0.1, (1.0 - t * 2.0) * 0.6))
+	# 起点：橙色扩散环（撞隐子位置）
+	draw_arc(from_pos, base_r * (1.0 + t * 2.0), 0, TAU, 32, Color(1.0, 0.55, 0.15, alpha * 0.9), 2.5)
+	# 终点：金色脉冲环（弹子落点）
+	draw_arc(to_pos, base_r * (1.2 + t * 1.0), 0, TAU, 32, Color(1.0, 0.85, 0.3, alpha * 0.8), 2.0)
+	# 连接虚线（弹道）
+	var segments: int = 6
+	for i in segments:
+		if i % 2 == 0:
+			var t1: float = float(i) / segments
+			var t2: float = float(i + 1) / segments
+			var p1: Vector2 = from_pos.lerp(to_pos, t1)
+			var p2: Vector2 = from_pos.lerp(to_pos, t2)
+			draw_line(p1, p2, Color(1.0, 0.7, 0.2, alpha * 0.7), 1.5)
 
 # 落子脉冲：单层扩散环
 func _draw_move_pulse(ov: Dictionary, t: float) -> void:
@@ -468,12 +520,13 @@ func _draw_move_pulse(ov: Dictionary, t: float) -> void:
 	draw_arc(pos, _theme.stone_radius() * (1.0 + t * 0.5), 0, TAU, 24, color, 1.5)
 
 # 部署特种部队：金色爆裂 + 十字光
+# 隐子位置保密：仅己方视角（或观战）下在落子位置画特效；对方视角下画在棋盘中心避免泄露
 func _draw_deploy_burst(ov: Dictionary, t: float) -> void:
 	var color_val: int = ov.get("color", Const.BLACK)
 	var pos_v: Vector2i = ov.get("position", Vector2i(-1, -1))
-	# 部署特效无具体位置时，在棋盘中心画
+	# 仅己方视角/观战下在位置画特效；对方视角下画在棋盘中心
 	var pos: Vector2
-	if pos_v.x >= 0:
+	if pos_v.x >= 0 and (observer_view == -1 or observer_view == color_val):
 		pos = _cell_to_pixel(pos_v.y, pos_v.x)
 	else:
 		pos = Vector2(_theme.board_pixel_size() * 0.5, _theme.board_pixel_size() * 0.5)
@@ -541,6 +594,9 @@ func _draw_siege_effect(ov: Dictionary, t: float) -> void:
 	var stones: Array = ov.get("stones", [])
 	var alpha: float = 1.0 - t
 	for s in stones:
+		# 隐子位置保密：对方视角下不画围困特效
+		if _is_hidden_from_observer(Vector2i(s.x, s.y)):
+			continue
 		var pos: Vector2 = _cell_to_pixel(s.y, s.x)
 		var base_r: float = _theme.stone_radius()
 		# 红色脉冲环（2 层）
@@ -554,6 +610,9 @@ func _draw_siege_broken(ov: Dictionary, t: float) -> void:
 	var stones: Array = ov.get("stones", [])
 	var alpha: float = 1.0 - t
 	for s in stones:
+		# 隐子位置保密：对方视角下不画围困解除特效
+		if _is_hidden_from_observer(Vector2i(s.x, s.y)):
+			continue
 		var pos: Vector2 = _cell_to_pixel(s.y, s.x)
 		var base_r: float = _theme.stone_radius()
 		# 绿色光环（2 层扩散，象征解放）

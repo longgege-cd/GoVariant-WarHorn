@@ -39,8 +39,8 @@ func _do_choose(session: GameSession) -> Dictionary:
 			if not deploy_pos.is_empty():
 				return {"type": "deploy", "row": deploy_pos.row, "col": deploy_pos.col, "reason": "特种渗透"}
 
-	# 创建根节点
-	var root: MCTSNode = MCTSNode.new(session.clone(), null, {})
+	# 创建根节点（AI 视角克隆，对手隐子已移除）
+	var root: MCTSNode = MCTSNode.new(session.clone_for_ai(my_color), null, {})
 	root.untried_moves = _ranked_candidates(session, my_color)
 	if root.untried_moves.is_empty():
 		return {"type": "pass", "row": -1, "col": -1, "reason": "无合法点"}
@@ -156,10 +156,10 @@ func _backpropagate(node: MCTSNode, score: float, _root_color: int) -> void:
 		n.wins += score
 		n = n.parent
 
-# 获取排序后的候选移动
+# 获取排序后的候选移动（使用 AI 视角棋盘）
 func _ranked_candidates(session: GameSession, c: int) -> Array:
 	var moves: Array = []
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	for r in range(b.size):
 		for c2 in range(b.size):
 			if b.get_at(r, c2) != Const.EMPTY:
@@ -176,7 +176,7 @@ func _ranked_candidates(session: GameSession, c: int) -> Array:
 
 # 寻找特种部队部署点（敌境空点）
 func _find_deploy_pos(session: GameSession, my_color: int) -> Dictionary:
-	var b: BoardModel = session.board
+	var b: BoardModel = _ai_view_board(session)
 	var candidates: Array = []
 	for r in range(b.size):
 		for c in range(b.size):

@@ -3,7 +3,7 @@
 # 总分 = 占领分 + 防御分 - 战损分
 #   占领分 = 活子分(+1/子于敌境/边境) + 围空分(+2/交叉点于己方围空内且在敌境/边境)
 # 防御分 = 歼灭分(+2/子在己境/边境实际提吃，累计) + 围困分(+1/子被围困于己境/边境)
-#   战损分 = 部队损失(-1/普通子被提吃，累计) + 隐子损失(-6/特种部队被提吃，累计) + 遭遇伏击(-1/子，累计)
+#   战损分 = 部队损失(-1/普通子被提吃，累计) + 隐子损失(-6/特种部队被提吃，累计)
 #
 # v4.3 核心机制（全分数动态结算）：
 #   - 盘中：所有分数（含围困分）实时动态计算
@@ -11,11 +11,12 @@
 #   - 围困棋子自己形成的包围圈围空分扣除（盘中实时）
 #   - 围困分盘中实时结算（+1/子在围困方己境/边境）
 #   - 终局：仅追加特种部队奖励 + 贴目 + 判胜
-#   - 规则3.2：围空分含圈内所有交叉点（空点+对方棋子位置）
+#   - 规则3.2：围空分计圈内空点 + 圈内对方围困棋子位置；对方活棋所占的点不计入
 #   - 规则3.4：扣除"围困棋子自己形成的包围圈"的围空分（围困棋子作为围空方）
+#   - 规则4.2：包围圈边界任一棋子为围困 → 围空分不计入占领分
 #
 # counters 结构（由 GameSession 维护）：
-#   { color: { "annihilate": int, "normal_lost": int, "special_lost": int, "ambushed": int } }
+#   { color: { "annihilate": int, "normal_lost": int, "special_lost": int } }
 class_name ScoreCalculator
 extends RefCounted
 
@@ -27,11 +28,10 @@ class Breakdown:
 	var defense_annihilate: int = 0     # 歼灭分 +2/子
 	var defense_siege: int = 0          # 围困分 +1/子（动态结算）
 	var casualty_loss: int = 0
-	var casualty_ambush: int = 0
 	var casualty_special: int = 0
 	func occupation() -> int: return occupation_live + occupation_territory
 	func defense() -> int: return defense_annihilate + defense_siege
-	func casualty() -> int: return casualty_loss + casualty_ambush + casualty_special
+	func casualty() -> int: return casualty_loss + casualty_special
 	func total() -> int:
 		return occupation() + defense() + casualty()  # casualty 已为负
 
@@ -41,7 +41,18 @@ static func compute(board: BoardModel, counters: Dictionary) -> Dictionary:
 	var bk := Breakdown.new()
 	var wt := Breakdown.new()
 
-	# 1. 围空分（规则3.2：圈内所有交叉点，无论是否有对方棋子，均计入围空分）
+	# 1. 识别所有围困棋子（v4.3：盘中实时判定）
+	# 围困 = 被包围 + 无两眼 + 圈内可合法落子空点 < 4（规则4.2）
+	# 提前识别：围空分计算需依据"对方活棋/围困"区分计分
+	var sieged_stones_set: Dictionary = {}  # idx -> color（围困棋子颜色）
+	var sieged_groups_list: Array = []
+	for g in board.all_groups():
+		if SiegeDetector.is_sieged(board, g):
+			sieged_groups_list.append(g)
+			for s in g.stones:
+				sieged_stones_set[s.y * board.size + s.x] = g.color
+
+	# 2. 围空分（规则3.2：圈内空点 +2/点；圈内对方棋子位置仅围困时 +2/点，活棋不计入）
 	# 纯几何判定，不依赖围成棋子死活（规则6.1）
 	var encs: Array = TerritoryDetector.enclosures(board)
 	for e in encs:
@@ -51,32 +62,37 @@ static func compute(board: BoardModel, counters: Dictionary) -> Dictionary:
 		for p in e.points:
 			if Const.is_attack_zone(p.y, color):
 				target.occupation_territory += 2
-		# 圈内对方棋子位置 +2/点（规则3.2：圈内所有交叉点均计入围空分）
+		# 圈内对方棋子位置 +2/点（仅围困棋子；活棋所占的点不计入围空分）
 		for s in e.stones_inside:
+			var sidx: int = s.y * board.size + s.x
+			if not sieged_stones_set.has(sidx):
+				continue  # 对方活棋 → 跳过
 			if Const.is_attack_zone(s.y, color):
 				target.occupation_territory += 2
 
-	# 2. 识别所有围困棋子（v4.3：盘中实时判定）
-	# 围困 = 被包围 + 无两眼 + 圈内可合法落子空点 < 4（规则4.2）
-	var sieged_stones_set: Dictionary = {}  # idx -> color（围困棋子颜色）
-	var sieged_groups_list: Array = []
-	for g in board.all_groups():
-		if SiegeDetector.is_sieged(board, g):
-			sieged_groups_list.append(g)
-			for s in g.stones:
-				sieged_stones_set[s.y * board.size + s.x] = g.color
-
 	# 3. 扣除围困棋子自己形成的包围圈的围空分（规则3.4，v4.3：盘中实时扣除）
 	# 围困棋子作为围空方形成的包围圈，其围空分全部扣除
+	# 同时（规则6.3嵌套）：无效包围圈的空点归属于对手方(最外层有效包围方)
 	for e in encs:
 		if _is_enclosure_formed_by_sieged(board, e, sieged_stones_set):
-			var target: Breakdown = bk if e.color == Const.BLACK else wt
+			var enc_color: int = e.color
+			var target: Breakdown = bk if enc_color == Const.BLACK else wt
+			# 扣除围空方的围空分（与第2步加法对应：仅围困棋子位置扣除，活棋位置未加故不扣）
 			for p in e.points:
-				if Const.is_attack_zone(p.y, e.color):
+				if Const.is_attack_zone(p.y, enc_color):
 					target.occupation_territory -= 2
 			for s in e.stones_inside:
-				if Const.is_attack_zone(s.y, e.color):
+				var sidx: int = s.y * board.size + s.x
+				if not sieged_stones_set.has(sidx):
+					continue  # 对方活棋 → 第2步未加，此处不扣
+				if Const.is_attack_zone(s.y, enc_color):
 					target.occupation_territory -= 2
+			# 嵌套归属：无效包围圈空点归对手方（规则6.3：内层无效→归外层有效包围方）
+			var opp: int = Const.opponent(enc_color)
+			var opp_target: Breakdown = bk if opp == Const.BLACK else wt
+			for p in e.points:
+				if Const.is_attack_zone(p.y, opp):
+					opp_target.occupation_territory += 2
 
 	# 4. 活子分（v4.3：围困棋子不计活子分，盘中实时扣除）
 	# 规则3.1：活子 = 有气且未被提吃的棋子，敌境/边境 +1/子
@@ -122,11 +138,9 @@ static func _apply_counters(bk: Breakdown, wt: Breakdown, counters: Dictionary) 
 		var ann: int = c.get("annihilate", 0)
 		var nl: int = c.get("normal_lost", 0)
 		var sl: int = c.get("special_lost", 0)
-		var am: int = c.get("ambushed", 0)
 		b.defense_annihilate += ann * 2
 		b.casualty_loss -= nl
 		b.casualty_special -= sl * 6
-		b.casualty_ambush -= am
 
 # 终局结算（v4.3：盘中已全动态结算，终局仅追加特种部队奖励 + 贴目 + 判胜）
 # special_rewards: { color: { occ_live_delta, occ_territ_delta, def_delta, def_siege_delta } }
@@ -161,24 +175,21 @@ static func compute_final(board: BoardModel, counters: Dictionary, komi: float, 
 		"winner": winner,
 	}
 
-# 判定包围圈是否由围困棋子自己形成（规则3.4）
-# 规则："被围困的棋子，它自己形成的包围圈，其围空分全部扣除"
-# 条件：围空方颜色（enclosure.color）的所有边界棋子都属于该色的围困组群
-# 即：围困棋子作为围空方形成的包围圈，且全部边界棋子都是围困棋子
+# 判定包围圈是否由围困棋子形成（规则4.2 + 3.4）
+# 规则4.2：包围圈边界棋子任一为围困 → 围空分不计入占领分
+# 规则3.4：被围困的棋子自己形成的包围圈，其围空分全部扣除
+# 条件：围空方颜色的边界棋子中任一属于围困组群 → 包围圈无效，扣除围空分
 # sieged_stones_set: { idx -> color }（围困棋子位置 → 棋子颜色）
 static func _is_enclosure_formed_by_sieged(board: BoardModel, enclosure: Dictionary, sieged_stones_set: Dictionary) -> bool:
 	var enc_color: int = enclosure.color
-	var found_enc_color_border: bool = false
 	for idx in enclosure.border_stones_idx:
 		var r: int = idx / board.size
 		var c: int = idx % board.size
 		var stone_color: int = board.get_at(r, c)
 		if stone_color != enc_color:
 			continue  # 对方棋子作为边界（两色边界场景），不影响判定
-		# 该边界棋子是围空方颜色
-		found_enc_color_border = true
-		# 检查它是否属于围困组群
-		if sieged_stones_set.get(idx, -1) != enc_color:
-			return false  # 围空方颜色的边界棋子不属于围困组群 → 包围圈有效
-	# 所有围空方颜色的边界棋子都属于围困组群 → 包围圈由围困棋子形成 → 扣除
-	return found_enc_color_border
+		# 围空方颜色的边界棋子：若任一为围困 → 包围圈无效
+		if sieged_stones_set.get(idx, -1) == enc_color:
+			return true
+	# 所有围空方边界棋子都非围困 → 包围圈有效
+	return false

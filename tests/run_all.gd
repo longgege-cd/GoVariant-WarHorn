@@ -26,8 +26,14 @@ func _init() -> void:
 	var siege_tests := preload("res://tests/test_siege.gd").new()
 	siege_tests.run(t)
 
+	var territory_siege_edge_tests := preload("res://tests/test_territory_siege_edge.gd").new()
+	territory_siege_edge_tests.run(t)
+
 	var score_tests := preload("res://tests/test_score.gd").new()
 	score_tests.run(t)
+
+	var score_panel_tests := preload("res://tests/test_score_panel.gd").new()
+	score_panel_tests.run(t)
 
 	var special_tests := preload("res://tests/test_special.gd").new()
 	special_tests.run(t)
@@ -43,6 +49,12 @@ func _init() -> void:
 
 	var sim_tests := preload("res://tests/test_simulator.gd").new()
 	sim_tests.run(t)
+
+	var sgf_tests := preload("res://tests/test_sgf.gd").new()
+	sgf_tests.run(t)
+
+	var replay_tests := preload("res://tests/test_replay.gd").new()
+	replay_tests.run(t)
 
 	# 汇总
 	_p("")

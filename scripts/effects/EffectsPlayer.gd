@@ -27,15 +27,16 @@ func play_capture(captured_positions: Array, capturer_color: int) -> void:
 		"capturer_color": capturer_color,
 	})
 
-# 伏击特效：落子被消灭的位置
-func play_ambush(position: Vector2i, ambushed_color: int) -> void:
+# 弹子特效：撞隐子后弹至周围八格（重叠位置 → 弹子落点）
+func play_bounce(overlap_pos: Vector2i, placed_pos: Vector2i, mover_color: int) -> void:
 	if not enabled:
 		return
-	Log.d("[特效] 伏击 pos=%s ambushed=%d" % [str(position), ambushed_color])
-	_play_sound("capture")  # 伏击复用提子音
-	effect_started.emit("ambush", {
-		"position": position,
-		"ambushed_color": ambushed_color,
+	Log.d("[特效] 弹子 from=%s to=%s mover=%d" % [str(overlap_pos), str(placed_pos), mover_color])
+	_play_sound("capture")  # 弹子复用提子音
+	effect_started.emit("bounce", {
+		"overlap_pos": overlap_pos,
+		"position": placed_pos,
+		"color": mover_color,
 	})
 
 # 落子特效（轻量提示）
@@ -49,12 +50,13 @@ func play_move(position: Vector2i, color: int) -> void:
 	})
 
 # 部署特种部队特效
-func play_special_deploy(color: int) -> void:
+# position: 部署位置（-1,-1 表示不指定）；仅己方视角/观战下在位置画特效，对方视角下画在棋盘中心避免泄露
+func play_special_deploy(color: int, position: Vector2i = Vector2i(-1, -1)) -> void:
 	if not enabled:
 		return
-	Log.d("[特效] 部署特种部队 color=%d" % color)
+	Log.d("[特效] 部署特种部队 color=%d pos=%s" % [color, str(position)])
 	_play_sound("deploy")
-	effect_started.emit("special_deploy", {"color": color})
+	effect_started.emit("special_deploy", {"color": color, "position": position})
 
 # 隐子暴露特效
 func play_reveal(position: Vector2i, reason: String) -> void:

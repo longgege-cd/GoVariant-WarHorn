@@ -96,7 +96,7 @@ func run(t: TestFramework) -> void:
 	t.expect_eq(sc.black.occupation_live, 1, "黑 +1")
 	t.expect_eq(sc.white.occupation_live, 1, "白 +1")
 	var fin = s.final_result("测试")
-	# 黑 1 - 2.5 = -1.5, 白 1 → 白胜
+	# 黑 1 - 3.5 = -2.5, 白 1 → 白胜
 	t.expect_eq(fin.winner, "白方胜", "贴目后白胜")
 
 	# 8. 兵力上限
@@ -237,3 +237,81 @@ func run(t: TestFramework) -> void:
 	t.expect_eq(fin13.white.breakdown.occupation_live, 1, "终局白活子扣除围困棋子分，仅远处+1")
 	t.expect_eq(fin13.white.breakdown.occupation_territory, 0, "终局白围空扣除（围困棋子自己形成的包围圈）")
 	t.expect_eq(fin13.black.breakdown.defense_siege, 5, "终局黑围困分 +5（白组群5子在黑境/边境）")
+
+	# 14. 贴目生效测试：自定义 komi 应直接影响终局总分与胜者
+	#    场景：黑下(10,10)在白境+1，白下(0,0)在黑境(白攻击区)+1 → 双方盘中各1分
+	#    终局：黑 final = 1 - komi，白 final = 1
+	#    komi=0.5  → 黑 0.5 > 白 1 → 白胜
+	#    komi=1.5  → 黑 -0.5 < 白 1 → 白胜
+	#    komi=0.0  → 黑 1 == 白 1 → 和棋
+	var s_komi0 := GameSession.new(0.0, false)
+	s_komi0.play_move(Const.BLACK, 10, 10)
+	s_komi0.play_move(Const.WHITE, 0, 0)
+	var fin_komi0 = s_komi0.final_result("贴目测试")
+	t.expect_eq(fin_komi0.black.final, 1.0, "komi=0: 黑 final = 1 - 0 = 1")
+	t.expect_eq(fin_komi0.white.final, 1.0, "komi=0: 白 final = 1")
+	t.expect_eq(fin_komi0.winner, "和棋", "komi=0: 和棋")
+
+	var s_komi05 := GameSession.new(0.5, false)
+	s_komi05.play_move(Const.BLACK, 10, 10)
+	s_komi05.play_move(Const.WHITE, 0, 0)
+	var fin_komi05 = s_komi05.final_result("贴目测试")
+	t.expect_eq(fin_komi05.black.final, 0.5, "komi=0.5: 黑 final = 1 - 0.5 = 0.5")
+	t.expect_eq(fin_komi05.winner, "白方胜", "komi=0.5: 白胜（0.5 < 1）")
+
+	var s_komi35 := GameSession.new(3.5, false)
+	s_komi35.play_move(Const.BLACK, 10, 10)
+	s_komi35.play_move(Const.WHITE, 0, 0)
+	var fin_komi35 = s_komi35.final_result("贴目测试")
+	t.expect_eq(fin_komi35.black.final, -2.5, "komi=3.5: 黑 final = 1 - 3.5 = -2.5")
+	t.expect_eq(fin_komi35.komi, 3.5, "komi=3.5: 返回值携带正确贴目")
+	t.expect_eq(fin_komi35.winner, "白方胜", "komi=3.5: 白胜（-2.5 < 1）")
+
+	# 15. 贴目反转测试：komi 足够大时黑胜 → 白胜
+	#     黑在白境围大空（+8围空），白仅1活子 → 黑8 - komi vs 白1
+	#     komi=5.0 → 黑 3 > 白 1 → 黑胜
+	#     komi=10.0 → 黑 -2 < 白 1 → 白胜
+	var s_big := GameSession.new(5.0, false)
+	for c in range(8, 12):
+		s_big.board.set_at(8, c, Const.BLACK)
+		s_big.board.set_at(11, c, Const.BLACK)
+	for r in range(9, 11):
+		s_big.board.set_at(r, 8, Const.BLACK)
+		s_big.board.set_at(r, 11, Const.BLACK)
+	s_big.board.set_at(0, 0, Const.WHITE)
+	var fin_big5 = s_big.final_result("贴目反转")
+	t.expect_eq(fin_big5.winner, "黑方胜", "komi=5.0: 黑胜（8-5=3 > 1）")
+
+	var s_big10 := GameSession.new(10.0, false)
+	for c in range(8, 12):
+		s_big10.board.set_at(8, c, Const.BLACK)
+		s_big10.board.set_at(11, c, Const.BLACK)
+	for r in range(9, 11):
+		s_big10.board.set_at(r, 8, Const.BLACK)
+		s_big10.board.set_at(r, 11, Const.BLACK)
+	s_big10.board.set_at(0, 0, Const.WHITE)
+	var fin_big10 = s_big10.final_result("贴目反转")
+	t.expect_eq(fin_big10.winner, "白方胜", "komi=10.0: 白胜（8-10=-2 < 1）")
+
+	# 16. 兵力上限可变测试：piece_limit 实例字段生效
+	#     piece_limit=99 → 第100子非法；默认171 → 第100子合法
+	var s_pl99 := GameSession.new(Const.KOMI_DEFAULT, false, 99)
+	t.expect_eq(s_pl99.piece_limit, 99, "piece_limit=99 实例字段正确")
+	t.expect_eq(s_pl99.pieces_left(Const.BLACK), 99, "piece_limit=99: 初始兵力 99")
+	s_pl99.stones_placed[Const.BLACK] = 98
+	t.expect(s_pl99.can_place(Const.BLACK), "piece_limit=99: 第99子合法")
+	s_pl99.stones_placed[Const.BLACK] = 99
+	t.expect(not s_pl99.can_place(Const.BLACK), "piece_limit=99: 第100子非法")
+
+	var s_pl144 := GameSession.new(Const.KOMI_DEFAULT, false, 144)
+	t.expect_eq(s_pl144.piece_limit, 144, "piece_limit=144 实例字段正确")
+	s_pl144.stones_placed[Const.BLACK] = 143
+	t.expect(s_pl144.can_place(Const.BLACK), "piece_limit=144: 第144子合法")
+	s_pl144.stones_placed[Const.BLACK] = 144
+	t.expect(not s_pl144.can_place(Const.BLACK), "piece_limit=144: 第145子非法")
+
+	# 17. clone() 继承 piece_limit
+	var s_orig := GameSession.new(4.5, true, 128)
+	var s_clone := s_orig.clone()
+	t.expect_eq(s_clone.piece_limit, 128, "clone() 继承 piece_limit=128")
+	t.expect_eq(s_clone.komi, 4.5, "clone() 继承 komi=4.5")

@@ -8,7 +8,7 @@ func run(t: TestFramework) -> void:
 	t.suite("信号触发")
 
 	# 1. 落子信号
-	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "ambush": 0,
+	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "bounce": 0,
 		"last": {}, "end_result": {}, "captures": []}
 	var s := GameSession.new(Const.KOMI_DEFAULT, false)
 	s.move_committed.connect(_on_move)
@@ -23,7 +23,7 @@ func run(t: TestFramework) -> void:
 	t.expect_eq(_state.last.placed, Vector2i(9, 9), "placed=(9,9)")
 
 	# 2. 虚手信号 + 终局信号
-	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "ambush": 0,
+	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "bounce": 0,
 		"last": {}, "end_result": {}, "captures": []}
 	s = GameSession.new(Const.KOMI_DEFAULT, false)
 	s.move_committed.connect(_on_move)
@@ -37,7 +37,7 @@ func run(t: TestFramework) -> void:
 	t.expect(s.game_over, "game_over=true")
 
 	# 3. 提子信号
-	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "ambush": 0,
+	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "bounce": 0,
 		"last": {}, "end_result": {}, "captures": []}
 	s = GameSession.new(Const.KOMI_DEFAULT, false)
 	s.move_committed.connect(_on_move)
@@ -57,7 +57,7 @@ func run(t: TestFramework) -> void:
 		t.expect_eq(_state.captures[0].mover_color, Const.BLACK, "提子方=BLACK")
 
 	# 4. 部署特种部队信号
-	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "ambush": 0,
+	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "bounce": 0,
 		"last": {}, "end_result": {}, "captures": []}
 	s = GameSession.new(Const.KOMI_DEFAULT, true)
 	s.move_committed.connect(_on_move)
@@ -68,8 +68,8 @@ func run(t: TestFramework) -> void:
 	t.expect_eq(_state.deploy, 1, "部署事件 1 次")
 	t.expect_eq(_state.last.mover_color, Const.BLACK, "部署 mover=BLACK")
 
-	# 5. 伏击信号
-	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "ambush": 0,
+	# 5. 弹子信号（隐子重叠→弹子）
+	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "bounce": 0,
 		"last": {}, "end_result": {}, "captures": []}
 	s = GameSession.new(Const.KOMI_DEFAULT, true)
 	s.move_committed.connect(_on_move)
@@ -77,13 +77,13 @@ func run(t: TestFramework) -> void:
 	s.game_ended.connect(_on_end)
 	s.deploy_special(Const.BLACK, 5, 5)  # 黑隐子
 	out = s.play_move(Const.WHITE, 5, 5)  # 白撞隐子
-	t.expect(out.ambush, "触发伏击")
-	t.expect_eq(_state.ambush, 1, "伏击事件 1 次")
-	t.expect_eq(_state.last.mover_color, Const.WHITE, "被伏击方=WHITE")
-	t.expect_eq(_state.last.placed, Vector2i(5, 5), "伏击位置=(5,5)")
+	t.expect(out.bounced, "触发弹子")
+	t.expect_eq(_state.bounce, 1, "弹子事件 1 次")
+	t.expect_eq(_state.last.mover_color, Const.WHITE, "弹子方=WHITE")
+	t.expect_eq(_state.last.overlap_pos, Vector2i(5, 5), "重叠位置=(5,5)")
 
 	# 6. 实时计分信号：每次行棋都应触发 scores_changed
-	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "ambush": 0,
+	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "bounce": 0,
 		"last": {}, "end_result": {}, "captures": []}
 	s = GameSession.new(Const.KOMI_DEFAULT, false)
 	s.move_committed.connect(_on_move)
@@ -95,6 +95,78 @@ func run(t: TestFramework) -> void:
 	s.do_pass(Const.WHITE)
 	t.expect_eq(_state.score, 4, "4次行棋=4次 scores_changed")
 
+	# 7. 悔棋：恢复上一手前状态，触发信号
+	_state = {"move": 0, "score": 0, "pass": 0, "end": 0, "deploy": 0, "bounce": 0,
+		"last": {}, "end_result": {}, "captures": []}
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.move_committed.connect(_on_move)
+	s.scores_changed.connect(_on_score)
+	s.game_ended.connect(_on_end)
+	# 开局无可悔棋
+	t.expect(not s.can_undo(), "开局无可悔棋")
+	# 黑下(10,10) → 黑在白境活子+1
+	s.play_move(Const.BLACK, 10, 10)
+	t.expect(s.can_undo(), "行棋后可悔棋")
+	var sc_before = s.scores()
+	t.expect_eq(sc_before.black.occupation_live, 1, "悔棋前黑活子+1")
+	# 白下(11,11)
+	s.play_move(Const.WHITE, 11, 11)
+	# 悔棋一手 → 恢复到白下(11,11)前
+	var undo_out = s.undo()
+	t.expect(undo_out.ok, "悔棋成功")
+	t.expect(undo_out.undid, "undid=true")
+	t.expect_eq(s.to_move, Const.WHITE, "悔棋后轮到白方")
+	t.expect_eq(s.board.get_at(11, 11), Const.EMPTY, "悔棋后(11,11)为空")
+	t.expect_eq(s.board.get_at(10, 10), Const.BLACK, "悔棋后(10,10)仍为黑")
+	var sc_after = s.scores()
+	t.expect_eq(sc_after.white.occupation_live, 0, "悔棋后白活子恢复0")
+	t.expect_eq(s.ply, 1, "悔棋后 ply=1")
+	# 再悔一手 → 恢复到开局
+	s.undo()
+	t.expect(not s.can_undo(), "悔到开局后无可悔棋")
+	t.expect_eq(s.board.get_at(10, 10), Const.EMPTY, "悔到开局(10,10)为空")
+	t.expect_eq(s.ply, 0, "悔到开局 ply=0")
+	t.expect_eq(s.to_move, Const.BLACK, "悔到开局轮到黑方")
+
+	# 8. 悔棋恢复提子与战损
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	# 构造提子：黑提白(4,4)
+	s.play_move(Const.BLACK, 3, 4)
+	s.play_move(Const.WHITE, 4, 4)
+	s.play_move(Const.BLACK, 5, 4)
+	s.play_move(Const.WHITE, 18, 18)
+	s.play_move(Const.BLACK, 4, 3)
+	s.play_move(Const.WHITE, 18, 17)
+	s.play_move(Const.BLACK, 4, 5)  # 提白(4,4)
+	t.expect_eq(s.board.get_at(4, 4), Const.EMPTY, "提子后(4,4)为空")
+	t.expect_eq(s.counters[Const.WHITE].normal_lost, 1, "提子后白战损1")
+	# 悔棋 → 恢复白(4,4)在盘上，战损归0
+	s.undo()
+	t.expect_eq(s.board.get_at(4, 4), Const.WHITE, "悔棋后白(4,4)恢复")
+	t.expect_eq(s.counters[Const.WHITE].normal_lost, 0, "悔棋后白战损恢复0")
+	t.expect_eq(s.counters[Const.BLACK].annihilate, 0, "悔棋后黑歼灭分恢复0")
+
+	# 9. 悔棋恢复特种部队状态
+	s = GameSession.new(Const.KOMI_DEFAULT, true)
+	s.emit_signals = false
+	s.deploy_special(Const.BLACK, 5, 5)  # 部署隐子
+	t.expect_eq(s.special.uses_left(Const.BLACK), 1, "部署后剩余1次")
+	t.expect(s.special.has_hidden_at(Vector2i(5, 5)), "隐子存在")
+	s.undo()
+	t.expect_eq(s.special.uses_left(Const.BLACK), 2, "悔棋后剩余次数恢复2")
+	t.expect(not s.special.has_hidden_at(Vector2i(5, 5)), "悔棋后隐子不存在")
+
+	# 10. 终局后不可悔棋
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	s.do_pass(Const.BLACK)
+	s.do_pass(Const.WHITE)  # 双方虚手 → 终局
+	t.expect(s.game_over, "双方虚手终局")
+	t.expect(not s.can_undo(), "终局后不可悔棋")
+	var fail_undo = s.undo()
+	t.expect(not fail_undo.ok, "终局后悔棋失败")
+
 # 信号回调
 func _on_move(outcome: Dictionary) -> void:
 	_state.move += 1
@@ -103,8 +175,8 @@ func _on_move(outcome: Dictionary) -> void:
 		_state.pass += 1
 	if outcome.get("deployed", false):
 		_state.deploy += 1
-	if outcome.get("ambush", false):
-		_state.ambush += 1
+	if outcome.get("bounced", false):
+		_state.bounce += 1
 	if outcome.captures.size() > 0:
 		_state.captures.append(outcome)
 

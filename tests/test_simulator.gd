@@ -27,7 +27,7 @@ func run(t: TestFramework) -> void:
 	rng.seed = 42
 	var games: int = 0
 	var total_moves: int = 0
-	var ambush_events: int = 0
+	var bounce_events: int = 0
 	var capture_events: int = 0
 	var siege_seen: int = 0
 	var deploy_events: int = 0
@@ -40,7 +40,7 @@ func run(t: TestFramework) -> void:
 		var result := _play_one(s, rng, i)
 		games += 1
 		total_moves += result.moves
-		ambush_events += result.ambushes
+		bounce_events += result.bounces
 		capture_events += result.captures
 		siege_seen += result.sieges
 		deploy_events += result.deploys
@@ -50,13 +50,13 @@ func run(t: TestFramework) -> void:
 			all_invariant_ok = false
 		t.expect(result.terminated, "第%d局应正常终止" % i)
 		t.expect(result.invariant_ok, "第%d局不变量通过" % i)
-	print("  共 %d 局, %d 手, 部署 %d, 伏击 %d, 提子 %d, 见围困 %d" % [games, total_moves, deploy_events, ambush_events, capture_events, siege_seen])
+	print("  共 %d 局, %d 手, 部署 %d, 弹子 %d, 提子 %d, 见围困 %d" % [games, total_moves, deploy_events, bounce_events, capture_events, siege_seen])
 	print("  所有局终止: %s, 所有不变量通过: %s" % [str(all_terminated), str(all_invariant_ok)])
 
 # 单局模拟，返回统计
 func _play_one(s: GameSession, rng: RandomNumberGenerator, game_idx: int) -> Dictionary:
 	var moves: int = 0
-	var ambushes: int = 0
+	var bounces: int = 0
 	var captures: int = 0
 	var sieges: int = 0
 	var deploys: int = 0
@@ -67,8 +67,8 @@ func _play_one(s: GameSession, rng: RandomNumberGenerator, game_idx: int) -> Dic
 		var out: Dictionary = _choose_move(s, mover, rng)
 		if out.is_empty():
 			out = s.do_pass(mover)
-		if out.has("ambush") and out.ambush:
-			ambushes += 1
+		if out.has("bounced") and out.bounced:
+			bounces += 1
 		if out.has("captures") and out.captures.size() > 0:
 			captures += 1
 		if out.has("deployed") and out.deployed:
@@ -92,7 +92,7 @@ func _play_one(s: GameSession, rng: RandomNumberGenerator, game_idx: int) -> Dic
 	return {
 		"terminated": s.game_over or moves >= MAX_PLY,
 		"moves": moves,
-		"ambushes": ambushes,
+		"bounces": bounces,
 		"captures": captures,
 		"deploys": deploys,
 		"sieges": sieges,

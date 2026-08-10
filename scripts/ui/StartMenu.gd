@@ -8,7 +8,8 @@
 #   - 动效：统一淡入+微上移，按阅读顺序逐个出现
 extends Control
 
-signal start_requested(mode: String, difficulty: int, time_setting: Dictionary)
+signal start_requested(mode: String, difficulty: int, time_setting: Dictionary, options: Dictionary)
+signal replay_requested
 signal theme_cycle_requested
 signal quit_requested
 
@@ -31,10 +32,21 @@ const TIME_ENTRIES := [
 	{"label": "5 分钟", "main": 300.0, "byoyomi": 0, "byoyomi_duration": 0.0},
 ]
 
+# 贴目步进参数
+const KOMI_STEP: float = 0.5      # 每次加减的变化量
+const KOMI_MIN: float = 0.0       # 最小贴目
+const KOMI_MAX: float = 20.5      # 最大贴目（上限保险）
+# 兵力上限选项（默认 144 = 标准围棋子数）
+const PIECE_ENTRIES := [144, 99, 128, 171]
+
 var _selected_idx: int = 0
 var _selected_time_idx: int = 0  # 思考时间选项索引
+var _selected_piece_idx: int = 0  # 兵力上限选项索引
 var _items: Array = []  # 模式列表项节点
 var _time_items: Array = []  # 思考时间列表项节点
+var _komi_value: float = Const.KOMI_DEFAULT  # 当前贴目（默认 3.5）
+var _komi_label: Label = null  # 贴目显示标签
+var _piece_option: OptionButton = null  # 兵力下拉
 
 # 动画引用节点
 var _title: Label = null
@@ -123,6 +135,65 @@ func _build_ui() -> void:
 
 	_add_spacer(root, 24)
 
+	# 对局设置：贴目（加减步进） + 兵力上限（下拉）
+	var settings_row := HBoxContainer.new()
+	settings_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	settings_row.add_theme_constant_override("separation", 24)
+	settings_row.size_flags_horizontal = SIZE_SHRINK_CENTER
+	root.add_child(settings_row)
+
+	# 贴目加减步进器：[−] 3.5 目 [+]
+	var komi_col := VBoxContainer.new()
+	komi_col.add_theme_constant_override("separation", 4)
+	komi_col.size_flags_horizontal = SIZE_SHRINK_CENTER
+	settings_row.add_child(komi_col)
+	var komi_title := Label.new()
+	komi_title.text = "贴  目"
+	komi_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	komi_title.add_theme_font_size_override("font_size", 12)
+	komi_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	komi_col.add_child(komi_title)
+	var komi_row := HBoxContainer.new()
+	komi_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	komi_row.add_theme_constant_override("separation", 6)
+	komi_col.add_child(komi_row)
+	var komi_dec := _make_step_btn("−")
+	komi_dec.pressed.connect(func(): _on_komi_step(-1))
+	komi_row.add_child(komi_dec)
+	_komi_label = Label.new()
+	_komi_label.text = "%.1f 目" % _komi_value
+	_komi_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_komi_label.custom_minimum_size = Vector2(72, 28)
+	_komi_label.add_theme_font_size_override("font_size", 15)
+	_komi_label.add_theme_color_override("font_color", UITheme.C_GOLD)
+	komi_row.add_child(_komi_label)
+	var komi_inc := _make_step_btn("+")
+	komi_inc.pressed.connect(func(): _on_komi_step(1))
+	komi_row.add_child(komi_inc)
+
+	# 兵力上限下拉
+	var piece_col := VBoxContainer.new()
+	piece_col.add_theme_constant_override("separation", 4)
+	piece_col.size_flags_horizontal = SIZE_SHRINK_CENTER
+	settings_row.add_child(piece_col)
+	var piece_title := Label.new()
+	piece_title.text = "兵  力"
+	piece_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	piece_title.add_theme_font_size_override("font_size", 12)
+	piece_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	piece_col.add_child(piece_title)
+	_piece_option = OptionButton.new()
+	_piece_option.custom_minimum_size = Vector2(100, 28)
+	_piece_option.add_theme_font_size_override("font_size", 13)
+	_piece_option.add_theme_color_override("font_color", UITheme.C_GOLD)
+	_piece_option.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
+	for p in PIECE_ENTRIES:
+		_piece_option.add_item("%d 子" % p)
+	_piece_option.select(_selected_piece_idx)
+	piece_col.add_child(_piece_option)
+
+	_add_spacer(root, 24)
+
 	# 开始按钮
 	_start_btn = Button.new()
 	_start_btn.text = "开 始 对 局"
@@ -150,6 +221,10 @@ func _build_ui() -> void:
 	var theme_btn := _make_text_button("切换主题", false)
 	theme_btn.pressed.connect(func(): theme_cycle_requested.emit())
 	_bottom_row.add_child(theme_btn)
+
+	var replay_btn := _make_text_button("棋 谱 回 放", false)
+	replay_btn.pressed.connect(func(): replay_requested.emit())
+	_bottom_row.add_child(replay_btn)
 
 	var quit_btn := _make_text_button("退出", true)
 	quit_btn.pressed.connect(func(): quit_requested.emit())
@@ -300,7 +375,40 @@ func _on_start() -> void:
 		"byoyomi": time_entry.byoyomi,
 		"byoyomi_duration": time_entry.byoyomi_duration,
 	}
-	start_requested.emit(entry.mode, entry.diff, time_setting)
+	var options: Dictionary = {
+		"komi": _komi_value,
+		"piece_limit": PIECE_ENTRIES[_piece_option.selected],
+	}
+	start_requested.emit(entry.mode, entry.diff, time_setting, options)
+
+# 贴目加减按钮：dir = -1 减 / +1 加，变化量 0.5
+func _on_komi_step(dir: int) -> void:
+	_komi_value = clamp(_komi_value + dir * KOMI_STEP, KOMI_MIN, KOMI_MAX)
+	if _komi_label != null:
+		_komi_label.text = "%.1f 目" % _komi_value
+
+# 创建步进按钮（用于贴目加减）
+func _make_step_btn(label: String) -> Button:
+	var b := Button.new()
+	b.text = label
+	b.custom_minimum_size = Vector2(28, 28)
+	b.add_theme_font_size_override("font_size", 16)
+	b.add_theme_color_override("font_color", UITheme.C_GOLD)
+	b.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
+	var sb := StyleBoxFlat.new()
+	sb.corner_detail = 1
+	sb.bg_color = Color(0.04, 0.03, 0.02, 0.9)
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 1
+	sb.border_color = UITheme.C_GOLD_DIM
+	b.add_theme_stylebox_override("normal", sb)
+	var sb_hover := sb.duplicate()
+	sb_hover.border_color = UITheme.C_GOLD
+	b.add_theme_stylebox_override("hover", sb_hover)
+	b.add_theme_stylebox_override("pressed", sb_hover)
+	return b
 
 func _add_spacer(parent: Container, h: int) -> void:
 	var sp := Control.new()
@@ -322,6 +430,12 @@ func _play_entrance() -> void:
 		_animate_in(entry.btn, 0.3, 0.0, delay)
 		delay += 0.05
 	delay += 0.15
+	# 对局设置淡入（贴目步进器和兵力下拉）
+	if _komi_label != null:
+		_animate_in(_komi_label.get_parent(), 0.35, 0.0, delay); delay += 0.1
+	if _piece_option != null:
+		_animate_in(_piece_option, 0.35, 0.0, delay); delay += 0.1
+	delay += 0.1
 	_animate_in(_start_btn, 0.45, 0.0, delay); delay += 0.3
 	_animate_in(_bottom_row, 0.35, 0.0, delay)
 

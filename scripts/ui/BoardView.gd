@@ -27,6 +27,9 @@ var _theme: BaseTheme = null
 var _last_redraw_time: int = 0  # 限频重绘（呼吸动画 30fps）
 var _error_flash: float = 0.0  # 非法操作红色边框闪烁强度（0~1，逐帧衰减）
 var _deploy_mode: bool = false  # 部署特种部队模式（边框呼吸 + 顶部小横条提示）
+# 开局领土/边境线波浪动画（新对局后持续 3.5 秒）
+var _opening_anim_time: float = 0.0  # 剩余秒数（>0 表示动画进行中）
+const OPENING_ANIM_DURATION: float = 3.5  # 总时长
 
 func _ready() -> void:
 	_theme = ThemeManager.current
@@ -45,6 +48,8 @@ func _on_theme_changed(new_theme: BaseTheme) -> void:
 func set_session(s: GameSession) -> void:
 	session = s
 	last_move = Vector2i(-1, -1)
+	# 触发开局领土波浪动画
+	_opening_anim_time = OPENING_ANIM_DURATION
 	queue_redraw()
 
 # 接收行棋结果并更新视图
@@ -182,10 +187,52 @@ func _draw_zone_hints(total_size: int) -> void:
 	var top_h: int = cs * 9  # 行0-8
 	var bot_y: int = margin + cs * 10  # 行10开始
 	var bot_h: int = cs * 9  # 行10-18
-	# 黑境
-	draw_rect(Rect2(margin, margin, cs * 18, top_h), _theme.black_zone_hint, true)
-	# 白境
-	draw_rect(Rect2(margin, bot_y, cs * 18, bot_h), _theme.white_zone_hint, true)
+	# 开局方格波浪动画：每个方格按到边境线距离呈现波纹起伏
+	if _opening_anim_time > 0:
+		var progress: float = 1.0 - _opening_anim_time / OPENING_ANIM_DURATION  # 0→1
+		var intensity: float = sin(progress * PI)  # 整体强度 0→1→0
+		var time_phase: float = Time.get_ticks_msec() / 280.0  # 波浪传播速度
+		var base_black: Color = _theme.black_zone_hint
+		var base_white: Color = _theme.white_zone_hint
+		# 底色
+		draw_rect(Rect2(margin, margin, cs * 18, top_h), base_black, true)
+		draw_rect(Rect2(margin, bot_y, cs * 18, bot_h), base_white, true)
+		# 遍历每个方格（18×18）绘制波浪高亮
+		for gr in 18:  # 方格行 0-17
+			var row_center: float = gr + 0.5
+			# 方格到边境线（行9）的距离
+			var dist: float
+			var is_black: bool
+			if row_center < 9.0:
+				dist = 9.0 - row_center
+				is_black = true
+			else:
+				dist = row_center - 9.0
+				is_black = false
+			# 垂直波浪相位（从边境线向外扩散，距离越远相位越滞后）
+			var v_phase: float = -dist * 0.9 + time_phase
+			var v_wave: float = max(0.0, sin(v_phase))
+			var y: float = margin + cs * gr
+			for gc in 18:  # 方格列 0-17
+				# 水平波浪（轻微，增加立体感）
+				var col_center: float = gc + 0.5
+				var h_phase: float = (col_center - 9.0) * 0.4 + time_phase * 0.6
+				var h_wave: float = max(0.0, sin(h_phase)) * 0.35
+				var total_wave: float = clamp(v_wave + h_wave, 0.0, 1.0) * intensity
+				if total_wave < 0.05:
+					continue
+				var x: float = margin + cs * gc
+				# 高亮色：黑境偏冷蓝，白境偏暖金
+				var wave_color: Color
+				if is_black:
+					wave_color = Color(0.35, 0.55, 0.85, 0.55 * total_wave)
+				else:
+					wave_color = Color(0.95, 0.78, 0.32, 0.55 * total_wave)
+				draw_rect(Rect2(x, y, cs, cs), wave_color, true)
+	else:
+		# 普通显示
+		draw_rect(Rect2(margin, margin, cs * 18, top_h), _theme.black_zone_hint, true)
+		draw_rect(Rect2(margin, bot_y, cs * 18, bot_h), _theme.white_zone_hint, true)
 
 func _draw_border_zone_highlight(total_size: int) -> void:
 	# 边境线（第10行=行号9）的横带高亮
@@ -193,11 +240,25 @@ func _draw_border_zone_highlight(total_size: int) -> void:
 	var cs: int = _theme.cell_size
 	var y: float = margin + cs * 9 - cs * 0.5
 	var color: Color = _theme.border_zone_color
-	if _theme.border_zone_pulse:
+	if _opening_anim_time > 0:
+		# 开局期间多层辉光脉冲
+		var progress: float = 1.0 - _opening_anim_time / OPENING_ANIM_DURATION
+		var intensity: float = sin(progress * PI)  # 0→1→0
+		# 外层柔光（宽）
+		var glow_outer: Color = Color(color.r, color.g, color.b, 0.20 * intensity)
+		draw_rect(Rect2(margin, y - cs * 0.5, cs * 18, cs * 2.0), glow_outer, true)
+		# 内层亮光（窄）
+		var glow_inner: Color = Color(color.r, color.g, color.b, 0.40 * intensity)
+		draw_rect(Rect2(margin, y - cs * 0.2, cs * 18, cs * 1.4), glow_inner, true)
+		# 主线
+		color.a = 0.30 + 0.50 * intensity
+	elif _theme.border_zone_pulse:
 		# 呼吸效果（基于时间）
 		var t: float = fmod(Time.get_ticks_msec() / 1000.0, 2.0) / 2.0
 		var pulse: float = 0.5 + 0.5 * sin(t * TAU)
 		color.a = 0.10 + 0.10 * pulse
+	else:
+		pass  # 使用默认 color.a
 	draw_rect(Rect2(margin, y, cs * 18, cs), color, true)
 
 func _draw_grid(_total_size: int) -> void:
@@ -704,10 +765,14 @@ func _process(_delta: float) -> void:
 	if _error_flash > 0:
 		_error_flash = max(0.0, _error_flash - _delta * 2.0)
 		queue_redraw()
+	# 开局波浪动画倒计时
+	if _opening_anim_time > 0:
+		_opening_anim_time = max(0.0, _opening_anim_time - _delta)
+		queue_redraw()
 	if not effect_overlays.is_empty():
 		_cleanup_overlays()
-	# 是否需要持续重绘（呼吸动画/全息环/特效叠加/部署模式指示）
-	var need_anim: bool = _theme != null and (_theme.border_zone_pulse or _theme.holographic_ring or _deploy_mode or not effect_overlays.is_empty())
+	# 是否需要持续重绘（呼吸动画/全息环/特效叠加/部署模式指示/开局波浪）
+	var need_anim: bool = _theme != null and (_theme.border_zone_pulse or _theme.holographic_ring or _deploy_mode or not effect_overlays.is_empty() or _opening_anim_time > 0)
 	if not need_anim:
 		return
 	# 限频 30fps（呼吸/全息环不需要 60fps，降低 GPU 负载）

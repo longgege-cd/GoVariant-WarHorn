@@ -24,6 +24,12 @@ var side: int = Const.BLACK  # 本面板显示哪一方
 var timer: TimerSystem = null  # 计时器引用（用于环形计时条）
 var _role_name: String = ""  # 动态角色名（你/AI·难度/对手）；空则用默认"黑方/白方"
 var _score_history: Array = []  # 总分历史快照 [{my: int, opp: int}, ...]（曲线图用）
+# 得分日志（整合到模块4位置，替代原曲线图）
+var _log_entries: Array = []  # 该方行棋记录
+var _log_title_btn: Button = null  # 折叠/展开标题按钮
+var _log_scroll: ScrollContainer = null
+var _log_list: VBoxContainer = null
+var _log_expanded: bool = true  # 默认展开
 var _theme: BaseTheme = null
 var _total: int = 0
 var _display_total: float = 0.0  # 用于数字滚动动画的当前显示值
@@ -52,6 +58,7 @@ func _ready() -> void:
 	ThemeManager.theme_changed.connect(_on_theme_changed)
 	reload_avatar()
 	_build_deploy_button()
+	_build_log_panel()
 	# 入场动画
 	modulate.a = 0.0
 	scale = Vector2(0.92, 0.92)
@@ -63,10 +70,161 @@ func _ready() -> void:
 	t.parallel().tween_property(self, "scale", Vector2(1.0, 1.0), 0.5)
 	set_process(true)
 
+# 构建得分日志面板（模块4位置：折叠/展开标题 + 滚动列表）
+func _build_log_panel() -> void:
+	# 标题按钮（点击折叠/展开）
+	_log_title_btn = Button.new()
+	_log_title_btn.text = "▾ 得分日志"
+	_log_title_btn.pressed.connect(_toggle_log)
+	add_child(_log_title_btn)
+	# 滚动列表
+	_log_scroll = ScrollContainer.new()
+	add_child(_log_scroll)
+	_log_list = VBoxContainer.new()
+	_log_list.size_flags_horizontal = SIZE_EXPAND_FILL
+	_log_list.add_theme_constant_override("separation", 2)
+	_log_scroll.add_child(_log_list)
+	_apply_log_style()
+
+func _apply_log_style() -> void:
+	if _log_title_btn == null:
+		return
+	var font_c: Color = _c_text
+	var hover_c: Color = _c_highlight
+	_log_title_btn.add_theme_color_override("font_color", font_c)
+	_log_title_btn.add_theme_color_override("font_hover_color", hover_c)
+	_log_title_btn.add_theme_color_override("font_pressed_color", hover_c)
+	_log_title_btn.add_theme_font_size_override("font_size", 12)
+	var sbn := StyleBoxFlat.new()
+	sbn.corner_detail = 1
+	sbn.bg_color = Color(0.06, 0.04, 0.08, 0.9)
+	sbn.border_width_bottom = 1
+	sbn.border_color = _c_dim
+	sbn.content_margin_left = 8.0
+	sbn.content_margin_right = 8.0
+	_log_title_btn.add_theme_stylebox_override("normal", sbn)
+	var sbh := sbn.duplicate()
+	sbh.bg_color = Color(0.12, 0.09, 0.06, 0.95)
+	_log_title_btn.add_theme_stylebox_override("hover", sbh)
+	_log_title_btn.add_theme_stylebox_override("pressed", sbh)
+
+func _toggle_log() -> void:
+	_log_expanded = not _log_expanded
+	_refresh_log_view()
+
+# 注入完整日志（GameScreen 调用，自动过滤本方）
+func set_log_entries(all_entries: Array) -> void:
+	_log_entries.clear()
+	for e in all_entries:
+		if e.get("color", Const.BLACK) == side:
+			_log_entries.append(e)
+	if _log_title_btn != null:
+		_refresh_log_view()
+
+func _refresh_log_view() -> void:
+	if _log_title_btn == null:
+		return
+	var title: String = ("▾" if _log_expanded else "▸") + " 得分日志"
+	if not _log_entries.is_empty():
+		var last = _log_entries[-1]
+		var ply: int = last.get("ply", 0)
+		var after: int = last.get("score_after", 0)
+		var before: int = last.get("score_before", 0)
+		var delta: int = after - before
+		var sign: String = "+" if delta >= 0 else ""
+		title += "  [#%d %d (%s%d)]" % [ply, after, sign, delta]
+	_log_title_btn.text = title
+	_log_scroll.visible = _log_expanded
+	if _log_expanded:
+		for c in _log_list.get_children():
+			c.queue_free()
+		if _log_entries.is_empty():
+			var empty := Label.new()
+			empty.text = "（暂无记录）"
+			empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			empty.add_theme_font_size_override("font_size", 11)
+			empty.add_theme_color_override("font_color", _c_dim)
+			_log_list.add_child(empty)
+		else:
+			for e in _log_entries:
+				_log_list.add_child(_make_log_label(e))
+			call_deferred("_scroll_log_to_bottom")
+
+func _make_log_label(e: Dictionary) -> Label:
+	var ply: int = e.get("ply", 0)
+	var action: String = _log_action_label(e)
+	var pos_str: String = _log_pos_label(e)
+	var cap: int = e.get("captures", 0)
+	var cap_str: String = ("提%d" % cap) if cap > 0 else "  "
+	var score_str: String = _log_score_label(e)
+	var text: String = "%3d. %-5s %-4s %s  %s" % [ply, action, pos_str, cap_str, score_str]
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 11)
+	var delta: int = e.get("score_after", 0) - e.get("score_before", 0)
+	if delta > 0:
+		lbl.add_theme_color_override("font_color", _c_highlight)
+	elif delta < 0:
+		lbl.add_theme_color_override("font_color", UITheme.C_RED_WAR)
+	else:
+		lbl.add_theme_color_override("font_color", _c_text)
+	return lbl
+
+func _log_action_label(e: Dictionary) -> String:
+	if e.get("passed", false):
+		return "虚手"
+	if e.get("deployed", false):
+		return "部署"
+	if e.get("bounced", false):
+		return "弹子"
+	return "落子"
+
+func _log_pos_label(e: Dictionary) -> String:
+	var placed = e.get("placed", null)
+	if placed == null or not (placed is Vector2i) or placed.x < 0:
+		return "—"
+	var cols: String = "ABCDEFGHJKLMNOPQRST"
+	return "%s%d" % [cols[placed.x], Const.BOARD_SIZE - placed.y]
+
+func _log_score_label(e: Dictionary) -> String:
+	var before: int = e.get("score_before", 0)
+	var after: int = e.get("score_after", 0)
+	var delta: int = after - before
+	var sign: String = "+" if delta >= 0 else ""
+	return "%d→%d(%s%d)" % [before, after, sign, delta]
+
+func _scroll_log_to_bottom() -> void:
+	if _log_scroll == null or not is_instance_valid(_log_scroll):
+		return
+	if _log_list == null or _log_list.get_child_count() == 0:
+		return
+	_log_scroll.ensure_control_visible(_log_list.get_child(_log_list.get_child_count() - 1))
+
+# 更新日志面板子节点位置（在 _process 中调用，因为 oy 随 size 变化）
+func _update_log_layout() -> void:
+	if _log_title_btn == null or _log_scroll == null:
+		return
+	var w: float = size.x
+	var h: float = size.y
+	var content_h: float = 555.0
+	var oy: float = max(0.0, (h - content_h) * 0.5)
+	var pad: float = 22.0
+	# 模块4区域：sep3_y(y+oy+410) 下方 8px 开始，到 content_h 末尾
+	var log_x: float = pad
+	var log_y: float = oy + 418
+	var log_w: float = w - pad * 2
+	var log_h: float = content_h - 418  # 约 137px
+	_log_title_btn.position = Vector2(log_x, log_y)
+	_log_title_btn.size = Vector2(log_w, 22)
+	_log_scroll.position = Vector2(log_x, log_y + 24)
+	_log_scroll.size = Vector2(log_w, log_h - 24)
+
 func _on_theme_changed(t: BaseTheme) -> void:
 	_theme = t
 	_refresh_theme_colors()
 	_apply_deploy_button_style()
+	_apply_log_style()
+	_refresh_log_view()
 	queue_redraw()
 
 # 创建特种部队部署按钮（身份名片下方，居中）
@@ -328,6 +486,8 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	# 部署按钮：位置/文字/可用性随行棋方与特种状态变化
 	_update_deploy_button()
+	# 得分日志子节点位置（oy 随 size 变化）
+	_update_log_layout()
 
 func _draw() -> void:
 	if not _theme or not session:
@@ -444,8 +604,7 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 	var sep3_y: float = y + oy + 410
 	_draw_section_sep(x + pad, sep3_y, w - pad * 2)
 
-	# ===== 模块4：总分变化曲线图 =====
-	_draw_score_chart(x + pad, sep3_y + 8, w - pad * 2, 90.0)
+	# ===== 模块4：得分日志（子节点实现，位置由 _update_log_layout 更新）=====
 
 # 得分构成分数条：合并显示占领分、防御分、战损分
 #   x: 左上角 x, y: 顶部 y, w: 宽度, h: 高度, bk: Breakdown

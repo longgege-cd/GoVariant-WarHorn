@@ -48,6 +48,16 @@ func _ready() -> void:
 			font_size = FONT_SIZE_NORMAL
 			font_color = Color(0.85, 0.45, 0.95, 1.0)  # 魔法紫
 			outline_color = Color(0.25, 0.05, 0.30, 1.0)
+		"territory_lost":
+			# 围空失守：暗金（与围空形成对照）
+			font_size = FONT_SIZE_LARGE
+			font_color = Color(0.55, 0.42, 0.20, 1.0)
+			outline_color = Color(0.18, 0.10, 0.02, 1.0)
+		"siege_broken":
+			# 围困解除：暗紫（与围困形成对照）
+			font_size = FONT_SIZE_NORMAL
+			font_color = Color(0.55, 0.35, 0.65, 1.0)
+			outline_color = Color(0.18, 0.05, 0.22, 1.0)
 	add_theme_font_size_override("font_size", font_size)
 	add_theme_color_override("font_color", font_color)
 	add_theme_constant_override("outline_size", 4)
@@ -79,7 +89,7 @@ func _ready() -> void:
 
 	# 第一阶段：快速弹出（0→0.25秒）：淡入 + 放大到 1.3 倍
 	tween.tween_property(self, "modulate:a", 1.0, 0.18)
-	tween.parallel().tween_property(self, "scale", Vector2(1.3, 1.3), 0.22).set_ease(Tween.EASE_OUT_BACK)
+	tween.parallel().tween_property(self, "scale", Vector2(1.3, 1.3), 0.22).set_trans(Tween.TRANS_BACK)
 	tween.parallel().tween_property(self, "position:y", position.y - 12.0, 0.22)
 
 	# 第二阶段（0.25→1.2秒）：回缩到 1.0 倍 + 持续上浮 + 淡出

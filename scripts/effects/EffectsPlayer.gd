@@ -93,11 +93,11 @@ func play_territory_lost(points: Array, color: int) -> void:
 	_play_sound("territory")
 	effect_started.emit("territory_lost", {"points": points, "color": color})
 
-# 得分浮动文字特效（围空/歼灭/围困）
-# text: 显示文字，如 "围空 +4"
+# 得分浮动文字特效（围空/歼灭/围困 + 扣减）
+# text: 显示文字，如 "围空 +4" / "围空 -4"
 # position: 棋盘格坐标 Vector2i(col, row)
-# color: 得分方 Const.BLACK / Const.WHITE
-# popup_type: "territory" | "annihilate" | "siege"
+# color: 显示方颜色 Const.BLACK / Const.WHITE
+# popup_type: "territory" | "annihilate" | "siege" | "territory_lost" | "siege_broken"
 func play_score_popup(text: String, position: Vector2i, color: int, popup_type: String) -> void:
 	if not enabled:
 		return

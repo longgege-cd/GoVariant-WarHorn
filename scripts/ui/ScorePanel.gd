@@ -787,13 +787,14 @@ func _draw_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) ->
 	if timer == null:
 		return
 	var font: Font = get_theme_default_font()
-	var label_fs: int = max(10, _theme.coord_font_size - 2)
+	# 时间数字字号加大（原 coord_font_size - 2 → +6），居中显示在计时条上方
+	var label_fs: int = max(16, _theme.coord_font_size + 6)
 	var progress: float = timer.get_progress(side)
-	# 无限时间 → 居中显示 "∞ 无限"
+	# 无限时间 → 居中显示 "∞ 无限"（紧贴计时条上方，留 2px 缝隙）
 	if progress < 0:
 		var inf_c := _c_dim
 		inf_c.a = 0.6 if is_active else 0.4
-		font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y + label_fs + 1), "∞   无 限", HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, inf_c)
+		font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y - 2), "∞   无 限", HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, inf_c)
 		return
 	var tinfo: Dictionary = timer.get_time(side)
 	var in_byoyomi: bool = bool(tinfo.in_byoyomi)
@@ -894,7 +895,8 @@ func _draw_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) ->
 			time_str = "%ds" % ss
 	var num_c: Color = fill_c if is_active else _c_dim
 	num_c.a = 0.95 if is_active else 0.65
-	font.draw_string(get_canvas_item(), Vector2(x + w, y - 2), time_str, HORIZONTAL_ALIGNMENT_RIGHT, -1, label_fs, num_c)
+	# 时间数字居中显示在计时条上方，紧贴计时条留 2px 缝隙
+	font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y - 2), time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, num_c)
 
 # 绘制头像：有纹理画纹理，无纹理画像素风占位符（棋子色圆 + 人头剪影）
 func _draw_avatar(cx: float, cy: float, radius: float) -> void:

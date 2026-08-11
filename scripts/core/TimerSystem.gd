@@ -48,18 +48,14 @@ func reset(config: Dictionary) -> void:
 	_paused = false
 
 # 切换行棋方（落子后调用）：停止旧方计时，启动新方
-# 每手重置时间为初始值（per-move time 模式，不累计）
+# 总时间累计制（参考围棋包干时间）：落子后切换行棋方，不重置该方已消耗的主时间和读秒状态
 func switch_to(color: int) -> void:
 	_active = color
-	# 每手重置主时间为初始配置值
+	# 首次切换到某方（或该方时间未被初始化）时，才用初始配置兜底
 	var cfg: Dictionary = _config.get(color, {})
-	var init_main: float = float(cfg.get("main", -1.0))
-	if init_main >= 0:
-		_main_time[color] = init_main
-	# 重置读秒状态（每手重新开始）
-	var byo: int = int(cfg.get("byoyomi", 0))
-	if byo > 0:
-		_byoyomi_left[color] = byo
+	if not _main_time.has(color):
+		_main_time[color] = float(cfg.get("main", -1.0))
+		_byoyomi_left[color] = int(cfg.get("byoyomi", 0))
 		_in_byoyomi[color] = false
 		_byoyomi_time[color] = 0.0
 
@@ -120,14 +116,12 @@ func _trigger_timeout(c: int) -> void:
 		time_out.emit(c)
 	else:
 		# 单次超时 → 执行 pass（GameScreen 调用 session.do_pass）
-		# 恢复该方时间到初始值，供下一次行棋使用
+		# 总时间累计制：超时 pass 后不恢复该方主时间，让时间持续累计耗尽
+		# 仅在有读秒配置且尚未进入读秒时，给一次读秒机会
 		var cfg: Dictionary = _config.get(c, {})
-		var init_main: float = float(cfg.get("main", -1.0))
-		if init_main >= 0:
-			_main_time[c] = init_main
-		# 重置读秒状态（若有读秒配置）
 		var byo: int = int(cfg.get("byoyomi", 0))
-		if byo > 0:
+		if byo > 0 and not _in_byoyomi.get(c, false) and _byoyomi_time.get(c, 0.0) <= 0.0 and _byoyomi_left.get(c, 0) <= 0:
+			# 理论上 tick() 主时间耗尽时已进入读秒；此分支作为防御兜底
 			_byoyomi_left[c] = byo
 			_in_byoyomi[c] = false
 			_byoyomi_time[c] = 0.0

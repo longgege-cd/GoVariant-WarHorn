@@ -35,6 +35,9 @@ func _init() -> void:
 	var score_panel_tests := preload("res://tests/test_score_panel.gd").new()
 	score_panel_tests.run(t)
 
+	var timer_cumulative_tests := preload("res://tests/test_timer_cumulative.gd").new()
+	timer_cumulative_tests.run(t)
+
 	var special_tests := preload("res://tests/test_special.gd").new()
 	special_tests.run(t)
 

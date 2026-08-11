@@ -23,13 +23,20 @@ const MODE_ENTRIES := [
 	{"name": "联机对战", "desc": "主机或加入", "mode": "online", "diff": 0},
 ]
 
-# 思考时间选项：{ "label": 显示名, "main": 秒(-1=无限), "byoyomi": 读秒次数, "byoyomi_duration": 读秒时长 }
+# 思考时间选项（分业余/专业两组，参考传统围棋设定）
+# { "label": 显示名, "group": "amateur"|"pro", "main": 秒(-1=无限), "byoyomi": 读秒次数, "byoyomi_duration": 读秒时长 }
 const TIME_ENTRIES := [
-	{"label": "无 限 制", "main": -1.0, "byoyomi": 0, "byoyomi_duration": 0.0},
-	{"label": "30 秒", "main": 30.0, "byoyomi": 0, "byoyomi_duration": 0.0},
-	{"label": "60 秒", "main": 60.0, "byoyomi": 0, "byoyomi_duration": 0.0},
-	{"label": "2 分钟", "main": 120.0, "byoyomi": 0, "byoyomi_duration": 0.0},
-	{"label": "5 分钟", "main": 300.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	# 业余组
+	{"label": "无限制", "group": "amateur", "main": -1.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label": "闪电 5分", "group": "amateur", "main": 300.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label": "快棋 15分", "group": "amateur", "main": 900.0, "byoyomi": 3, "byoyomi_duration": 30.0},
+	{"label": "标准 30分", "group": "amateur", "main": 1800.0, "byoyomi": 3, "byoyomi_duration": 30.0},
+	{"label": "业余 60分", "group": "amateur", "main": 3600.0, "byoyomi": 5, "byoyomi_duration": 30.0},
+	# 专业组
+	{"label": "快棋赛 1h", "group": "pro", "main": 3600.0, "byoyomi": 5, "byoyomi_duration": 30.0},
+	{"label": "普通赛 3h", "group": "pro", "main": 10800.0, "byoyomi": 5, "byoyomi_duration": 60.0},
+	{"label": "大赛 5h", "group": "pro", "main": 18000.0, "byoyomi": 5, "byoyomi_duration": 60.0},
+	{"label": "头衔战 8h", "group": "pro", "main": 28800.0, "byoyomi": 10, "byoyomi_duration": 60.0},
 ]
 
 # 贴目步进参数
@@ -124,14 +131,10 @@ func _build_ui() -> void:
 
 	_add_spacer(root, 6)
 
-	# 思考时间选项（水平横排）
-	var time_row := HBoxContainer.new()
-	time_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	time_row.add_theme_constant_override("separation", 6)
-	time_row.size_flags_horizontal = SIZE_SHRINK_CENTER
-	root.add_child(time_row)
-	for i in TIME_ENTRIES.size():
-		_add_time_item(time_row, i)
+	# 思考时间选项（分业余/专业两行横排）
+	_add_time_row(root, "业 余", "amateur")
+	_add_spacer(root, 4)
+	_add_time_row(root, "专 业", "pro")
 
 	_add_spacer(root, 24)
 
@@ -229,6 +232,28 @@ func _build_ui() -> void:
 	var quit_btn := _make_text_button("退出", true)
 	quit_btn.pressed.connect(func(): quit_requested.emit())
 	_bottom_row.add_child(quit_btn)
+
+# 构建一行思考时间选项（带组标签）
+func _add_time_row(parent: Container, group_label: String, group_key: String) -> void:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	row.size_flags_horizontal = SIZE_SHRINK_CENTER
+	parent.add_child(row)
+	# 组标签
+	var lbl := Label.new()
+	lbl.text = group_label
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	lbl.custom_minimum_size = Vector2(40, 28)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(lbl)
+	# 该组所有选项
+	for i in TIME_ENTRIES.size():
+		if TIME_ENTRIES[i].get("group", "") != group_key:
+			continue
+		_add_time_item(row, i)
 
 # 添加思考时间选项项
 func _add_time_item(parent: Container, idx: int) -> void:

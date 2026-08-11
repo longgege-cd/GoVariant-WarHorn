@@ -1,21 +1,17 @@
 # 对局计时系统：纯逻辑（RefCounted + signal），不依赖 Node
 #
-# 设计：
+# 设计（参考围棋总时间制）：
 #   - 每方有 main_time（秒，-1=无限）和 byoyomi（读秒次数，0=无读秒）
-#   - 行棋方消耗 main_time；main_time 耗尽进入读秒（每次用尽 +1 次读秒重置）
-#   - 超时不再直接判负，改为发出 timeout_pass 信号 → GameSession 执行 do_pass
-#   - 连续 MAX_TIMEOUT_PASS 次超时 → time_out 信号 → 判负
-#   - 落子后重置该方连续超时计数（reset_timeout_count）
+#   - 行棋方消耗 main_time；main_time 耗尽后进入读秒
+#   - 无读秒时主时间耗尽，或读秒次数用尽 → 直接 time_out 判负
+#   - 落子后切换行棋方，不重置已消耗时间（总时间累计制）
 #   - 非行棋方不计时
 #   - pause/resume 支持暂停菜单
 class_name TimerSystem
 extends RefCounted
 
-signal time_out(color: int)  # 连续超时达上限 → 判负
+signal time_out(color: int)  # 时间耗尽（含读秒） → 直接判负
 signal time_changed(color: int)  # 时间变化通知（UI 刷新）
-signal timeout_pass(color: int)  # 单次超时 → 执行 pass（由 GameScreen 处理）
-
-const MAX_TIMEOUT_PASS: int = 3  # 连续超时次数上限
 
 # 时间配置：{ color: { "main": float(-1=无限), "byoyomi": int(0=无) } }
 var _config: Dictionary = {}
@@ -24,7 +20,6 @@ var _main_time: Dictionary = {}  # color -> float
 var _byoyomi_left: Dictionary = {}  # color -> int（剩余读秒次数）
 var _byoyomi_time: Dictionary = {}  # color -> float（当前读秒倒计时）
 var _in_byoyomi: Dictionary = {}  # color -> bool
-var _timeout_count: Dictionary = {}  # color -> int（连续超时次数）
 var _active: int = -1  # 当前行棋方（-1=未开始/暂停）
 var _paused: bool = false
 
@@ -36,14 +31,12 @@ func reset(config: Dictionary) -> void:
 	_byoyomi_left.clear()
 	_byoyomi_time.clear()
 	_in_byoyomi.clear()
-	_timeout_count.clear()
 	for c in [Const.BLACK, Const.WHITE]:
 		var cfg: Dictionary = config.get(c, {"main": -1.0, "byoyomi": 0})
 		_main_time[c] = float(cfg.get("main", -1.0))
 		_byoyomi_left[c] = int(cfg.get("byoyomi", 0))
 		_byoyomi_time[c] = 0.0
 		_in_byoyomi[c] = false
-		_timeout_count[c] = 0
 	_active = -1
 	_paused = false
 
@@ -59,14 +52,6 @@ func switch_to(color: int) -> void:
 		_in_byoyomi[color] = false
 		_byoyomi_time[color] = 0.0
 
-# 落子后重置该方连续超时计数（成功行棋后调用）
-func reset_timeout_count(color: int) -> void:
-	_timeout_count[color] = 0
-
-# 获取该方连续超时次数
-func get_timeout_count(color: int) -> int:
-	return int(_timeout_count.get(color, 0))
-
 # 推进时间（GameScreen._process 调用）
 func tick(delta: float) -> void:
 	if _paused or _active < 0:
@@ -81,8 +66,9 @@ func tick(delta: float) -> void:
 		if _byoyomi_time[c] <= 0.0:
 			_byoyomi_left[c] = _byoyomi_left.get(c, 0) - 1
 			if _byoyomi_left.get(c, 0) <= 0:
-				# 读秒用尽 → 触发单次超时 pass
-				_trigger_timeout(c)
+				# 读秒用尽 → 直接判负
+				_active = -1
+				time_out.emit(c)
 				return
 			# 重置读秒
 			var cfg: Dictionary = _config.get(c, {})
@@ -102,32 +88,11 @@ func tick(delta: float) -> void:
 				_byoyomi_time[c] = byo_dur
 				time_changed.emit(c)
 			else:
-				# 无读秒 → 触发单次超时 pass
-				_trigger_timeout(c)
+				# 无读秒 → 直接判负
+				_active = -1
+				time_out.emit(c)
 				return
 		time_changed.emit(c)
-
-# 触发单次超时：累加计数，未达上限发 timeout_pass，达上限发 time_out
-func _trigger_timeout(c: int) -> void:
-	_timeout_count[c] = int(_timeout_count.get(c, 0)) + 1
-	if int(_timeout_count[c]) >= MAX_TIMEOUT_PASS:
-		# 连续超时达上限 → 判负
-		_active = -1
-		time_out.emit(c)
-	else:
-		# 单次超时 → 执行 pass（GameScreen 调用 session.do_pass）
-		# 总时间累计制：超时 pass 后不恢复该方主时间，让时间持续累计耗尽
-		# 仅在有读秒配置且尚未进入读秒时，给一次读秒机会
-		var cfg: Dictionary = _config.get(c, {})
-		var byo: int = int(cfg.get("byoyomi", 0))
-		if byo > 0 and not _in_byoyomi.get(c, false) and _byoyomi_time.get(c, 0.0) <= 0.0 and _byoyomi_left.get(c, 0) <= 0:
-			# 理论上 tick() 主时间耗尽时已进入读秒；此分支作为防御兜底
-			_byoyomi_left[c] = byo
-			_in_byoyomi[c] = false
-			_byoyomi_time[c] = 0.0
-		# 暂停计时，等待 pass 处理后 switch_to 切换
-		_active = -1
-		timeout_pass.emit(c)
 
 func pause() -> void:
 	_paused = true

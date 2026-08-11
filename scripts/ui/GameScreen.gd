@@ -293,6 +293,7 @@ func _new_game() -> void:
 	}
 	_timer.reset(timer_cfg)
 	_timer.time_out.connect(_on_time_out)
+	_timer.time_changed.connect(_on_time_changed)
 	_timer.switch_to(session.to_move)
 	# 给得分板注入计时器引用（环形计时条）
 	if black_score_panel != null:
@@ -559,43 +560,31 @@ func _on_move_committed(outcome: Dictionary) -> void:
 	_detect_and_trigger_territory_siege()
 	_update_status()
 	_update_controls()
-	# 计时器切换到新行棋方；行棋成功重置该方连续超时计数
+	# 计时器切换到新行棋方
 	# overlap_fail 未成手（不切回合），跳过计时器切换
 	if _timer != null and not session.game_over and not is_overlap_fail:
-		_timer.reset_timeout_count(mover_color)
 		_timer.switch_to(session.to_move)
 	# PvE：轮到 AI 时自动行棋（overlap_fail 时 AI 由 _ai_play 重试循环处理）
 	if not is_overlap_fail:
 		_maybe_trigger_ai()
 
-# 单次超时：执行 pass（不直接判负）
-# 联机模式：本地超时也需通过 NetSync 同步 pass
-func _on_timeout_pass(color: int) -> void:
-	if session == null or session.game_over:
-		return
-	_show_status("%s超时（自动虚手 %d/3）" % [("黑方" if color == Const.BLACK else "白方"), _timer.get_timeout_count(color)])
-	if _online_mode:
-		# 联机：仅本地玩家超时可执行 pass
-		if color != NetworkManager.local_color:
-			return
-		var out: Dictionary = NetSync.local_do_pass()
-		if not out.ok:
-			Log.w("超时 pass 失败: %s" % out.get("reason", ""))
-		return
-	var out: Dictionary = session.do_pass(color)
-	if not out.ok:
-		Log.w("超时 pass 失败: %s" % out.get("reason", ""))
+# 时间变化时刷新得分板计时条显示
+func _on_time_changed(_color: int) -> void:
+	if black_score_panel != null:
+		black_score_panel.queue_redraw()
+	if white_score_panel != null:
+		white_score_panel.queue_redraw()
 
-# 计时器连续3次超时：判超时方负
+# 时间耗尽（含读秒）：直接判超时方负
 func _on_time_out(color: int) -> void:
 	if session == null or session.game_over:
 		return
 	var winner_str: String = "白方胜" if color == Const.BLACK else "黑方胜"
 	var loser_str: String = "黑方" if color == Const.BLACK else "白方"
 	session.game_over = true
-	var result: Dictionary = session.final_result("连续超时")
+	var result: Dictionary = session.final_result("超时")
 	result["winner"] = winner_str
-	result["reason"] = "%s连续3次超时" % loser_str
+	result["reason"] = "%s超时" % loser_str
 	session.game_ended.emit(result)
 	_update_status()
 	_update_controls()
@@ -1100,8 +1089,8 @@ func _reinit_timer() -> void:
 	if _timer != null:
 		if _timer.time_out.is_connected(_on_time_out):
 			_timer.time_out.disconnect(_on_time_out)
-		if _timer.timeout_pass.is_connected(_on_timeout_pass):
-			_timer.timeout_pass.disconnect(_on_timeout_pass)
+		if _timer.time_changed.is_connected(_on_time_changed):
+			_timer.time_changed.disconnect(_on_time_changed)
 	_timer = TimerSystem.new()
 	var timer_cfg: Dictionary = {
 		Const.BLACK: _time_setting,
@@ -1109,7 +1098,7 @@ func _reinit_timer() -> void:
 	}
 	_timer.reset(timer_cfg)
 	_timer.time_out.connect(_on_time_out)
-	_timer.timeout_pass.connect(_on_timeout_pass)
+	_timer.time_changed.connect(_on_time_changed)
 	if session != null:
 		_timer.switch_to(session.to_move)
 	# 重新注入得分板

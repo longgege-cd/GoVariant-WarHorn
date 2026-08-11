@@ -1,4 +1,4 @@
-# 验证计时器为总时间累计制：switch_to 不重置该方已消耗时间
+# 验证计时器为总时间累计制，且时间耗尽（含读秒）直接判负
 extends RefCounted
 
 const TimerSystem = preload("res://scripts/core/TimerSystem.gd")
@@ -47,3 +47,25 @@ func run(t) -> void:
 	var t2_after2 := timer2.get_time(Const.BLACK)
 	t.expect_eq(t2_after2.byoyomi_left, 2, "读秒再消耗10s后，黑读秒剩余2次")
 	t.expect_eq(int(t2_after2.byoyomi_time), 30, "读秒再消耗10s后重置为30s")
+	
+	# 4. 无读秒时主时间耗尽直接判负（time_out 信号）
+	# 注意：GDScript lambda 对基本类型按值捕获，需用 Dict/Array 包装
+	var timer3 := TimerSystem.new()
+	var timeout_state: Dictionary = {"fired": false, "color": -1}
+	timer3.time_out.connect(func(c): timeout_state.fired = true; timeout_state.color = c)
+	timer3.reset({Const.BLACK: {"main": 5.0, "byoyomi": 0, "byoyomi_duration": 0.0}, Const.WHITE: {"main": 5.0, "byoyomi": 0, "byoyomi_duration": 0.0}})
+	timer3.switch_to(Const.BLACK)
+	timer3.tick(5.0)
+	t.expect(timeout_state.fired, "无读秒：主时间耗尽直接触发 time_out")
+	t.expect_eq(timeout_state.color, Const.BLACK, "time_out 颜色为黑方")
+	
+	# 5. 读秒次数用尽直接判负
+	var timer4 := TimerSystem.new()
+	var timeout4_state: Dictionary = {"fired": false}
+	timer4.time_out.connect(func(_c): timeout4_state.fired = true)
+	timer4.reset({Const.BLACK: {"main": 10.0, "byoyomi": 2, "byoyomi_duration": 30.0}, Const.WHITE: {"main": 10.0, "byoyomi": 2, "byoyomi_duration": 30.0}})
+	timer4.switch_to(Const.BLACK)
+	timer4.tick(10.0)  # 主时间耗尽，进入读秒（剩2次）
+	timer4.tick(30.0)  # 第1次读秒耗尽，剩1次
+	timer4.tick(30.0)  # 第2次读秒耗尽，应判负
+	t.expect(timeout4_state.fired, "读秒次数用尽直接触发 time_out")

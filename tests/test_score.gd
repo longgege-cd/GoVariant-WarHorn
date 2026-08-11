@@ -102,8 +102,8 @@ func run(t: TestFramework) -> void:
 	# 8. 兵力上限
 	s = GameSession.new()
 	s.stones_placed[Const.BLACK] = Const.PIECE_LIMIT - 1
-	out = s.play_move(Const.BLACK, 10, 10)  # 第171子
-	t.expect(out.ok, "第171子合法")
+	out = s.play_move(Const.BLACK, 10, 10)  # 第112子（默认兵力上限）
+	t.expect(out.ok, "第112子合法")
 	t.expect_eq(s.pieces_left(Const.BLACK), 0, "黑兵力用尽")
 	out = s.play_move(Const.WHITE, 11, 11)
 	# 现在轮白
@@ -294,7 +294,7 @@ func run(t: TestFramework) -> void:
 	t.expect_eq(fin_big10.winner, "白方胜", "komi=10.0: 白胜（8-10=-2 < 1）")
 
 	# 16. 兵力上限可变测试：piece_limit 实例字段生效
-	#     piece_limit=99 → 第100子非法；默认171 → 第100子合法
+	#     piece_limit=99 → 第100子非法；默认112 → 第100子合法
 	var s_pl99 := GameSession.new(Const.KOMI_DEFAULT, false, 99)
 	t.expect_eq(s_pl99.piece_limit, 99, "piece_limit=99 实例字段正确")
 	t.expect_eq(s_pl99.pieces_left(Const.BLACK), 99, "piece_limit=99: 初始兵力 99")

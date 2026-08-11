@@ -36,12 +36,12 @@ const TIME_ENTRIES := [
 const KOMI_STEP: float = 0.5      # 每次加减的变化量
 const KOMI_MIN: float = 0.0       # 最小贴目
 const KOMI_MAX: float = 20.5      # 最大贴目（上限保险）
-# 兵力上限选项（默认 144 = 标准围棋子数）
-const PIECE_ENTRIES := [144, 99, 128, 171]
+# 兵力上限选项（默认 112）
+const PIECE_ENTRIES := [90, 112, 134, 152]
 
 var _selected_idx: int = 0
 var _selected_time_idx: int = 0  # 思考时间选项索引
-var _selected_piece_idx: int = 0  # 兵力上限选项索引
+var _selected_piece_idx: int = 1  # 兵力上限选项索引（默认 112）
 var _items: Array = []  # 模式列表项节点
 var _time_items: Array = []  # 思考时间列表项节点
 var _komi_value: float = Const.KOMI_DEFAULT  # 当前贴目（默认 3.5）

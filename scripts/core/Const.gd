@@ -7,7 +7,7 @@ class_name Const
 
 const BOARD_SIZE: int = 19
 const BORDER_ROW: int = 9          # 0基：第10行
-const PIECE_LIMIT: int = 171       # 每方兵力上限（默认值，可在对局时覆盖）
+const PIECE_LIMIT: int = 112       # 每方兵力上限（默认值，可在对局时覆盖）
 
 # 棋色
 const EMPTY: int = 0

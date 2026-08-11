@@ -37,7 +37,9 @@ class Breakdown:
 
 # 盘中实时计分（v4.3：全分数动态结算，含围困分）
 # 返回 { "black": Breakdown, "white": Breakdown }
-static func compute(board: BoardModel, counters: Dictionary) -> Dictionary:
+# precomputed_sieged: 可选预计算的围困组群列表（避免与 GameSession 重复遍历）
+# precomputed_encs: 可选预计算的围空列表（避免与 GameSession 重复遍历）
+static func compute(board: BoardModel, counters: Dictionary, precomputed_sieged: Variant = null, precomputed_encs: Variant = null) -> Dictionary:
 	var bk := Breakdown.new()
 	var wt := Breakdown.new()
 
@@ -46,15 +48,22 @@ static func compute(board: BoardModel, counters: Dictionary) -> Dictionary:
 	# 提前识别：围空分计算需依据"对方活棋/围困"区分计分
 	var sieged_stones_set: Dictionary = {}  # idx -> color（围困棋子颜色）
 	var sieged_groups_list: Array = []
-	for g in board.all_groups():
-		if SiegeDetector.is_sieged(board, g):
-			sieged_groups_list.append(g)
+	if precomputed_sieged != null and precomputed_sieged is Array:
+		# 复用调用方预计算的围困组群（避免重复遍历 all_groups + is_sieged）
+		sieged_groups_list = precomputed_sieged
+		for g in sieged_groups_list:
 			for s in g.stones:
 				sieged_stones_set[s.y * board.size + s.x] = g.color
+	else:
+		for g in board.all_groups():
+			if SiegeDetector.is_sieged(board, g):
+				sieged_groups_list.append(g)
+				for s in g.stones:
+					sieged_stones_set[s.y * board.size + s.x] = g.color
 
 	# 2. 围空分（规则3.2：圈内空点 +2/点；圈内对方棋子位置仅围困时 +2/点，活棋不计入）
 	# 纯几何判定，不依赖围成棋子死活（规则6.1）
-	var encs: Array = TerritoryDetector.enclosures(board)
+	var encs: Array = precomputed_encs if (precomputed_encs != null and precomputed_encs is Array) else TerritoryDetector.enclosures(board)
 	for e in encs:
 		var color: int = e.color  # 围空方
 		var target: Breakdown = bk if color == Const.BLACK else wt

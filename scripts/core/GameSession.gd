@@ -82,13 +82,13 @@ func _ensure_cache() -> void:
 		return
 	if _cache_valid:
 		return
-	_cached_scores = ScoreCalculator.compute(board, counters)
-	_cached_enclosures = TerritoryDetector.enclosures(board)
-	# 围困组群 = 被对方包围且无两眼的棋子（独立判定，规则4.2）
+	# 先计算围困组群和围空（各一次遍历），供 ScoreCalculator 和缓存复用（避免重复遍历）
 	_cached_sieged_groups = []
 	for g in board.all_groups():
 		if SiegeDetector.is_sieged(board, g):
 			_cached_sieged_groups.append(g)
+	_cached_enclosures = TerritoryDetector.enclosures(board)
+	_cached_scores = ScoreCalculator.compute(board, counters, _cached_sieged_groups, _cached_enclosures)
 	_cache_valid = true
 
 # ===== 查询 =====

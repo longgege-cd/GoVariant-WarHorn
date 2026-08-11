@@ -56,21 +56,22 @@ static func has_two_true_eyes(board: BoardModel, group: Dictionary) -> bool:
 #   1. 被包围（处于对方封闭包围圈内，纯几何判定）
 #   2. 无两眼
 #   3. 圈内可合法落子的空点 < 4
-# 按优先级短路判定：
-#   优先级1：两眼 → 活棋
-#   优先级2：未被包围 → 活棋
-#   优先级3：被包围但空点≥4 → 活棋
+# 按性能优先级短路判定（大多数组群未被包围，第一步即返回）：
+#   优先级1：未被包围 → 活棋（最便宜：2次洪水填充，无clone）
+#   优先级2：被包围但合法空点≥4 → 活棋（短路：找到4个即返回）
+#   优先级3：两眼 → 活棋（最贵：每个气域空点clone棋盘，最后检查）
 #   以上都不满足 → 围困
 static func is_alive(board: BoardModel, group: Dictionary) -> bool:
-	# 优先级1：两眼判定
-	if has_two_true_eyes(board, group):
-		return true
-	# 优先级2：未被包围
+	# 优先级1：未被包围（大多数组群在此返回，跳过昂贵的两眼判定）
 	if not _is_surrounded_by_opponent(board, group):
 		return true
-	# 优先级3：被包围但空点≥4
-	var legal_points: int = count_legal_empty_points(board, group)
-	return legal_points >= 4
+	# 优先级2：被包围但合法空点≥4（短路，快速返回）
+	if count_legal_empty_points(board, group, 4) >= 4:
+		return true
+	# 优先级3：两眼判定（最贵，最后检查）
+	if has_two_true_eyes(board, group):
+		return true
+	return false
 
 # 围困判定（v4.1规则）
 # 围困 = 被包围 + 无两眼 + 圈内可合法落子的空点 < 4
@@ -83,7 +84,8 @@ static func is_sieged(board: BoardModel, group: Dictionary) -> bool:
 # 使用flooding从组群出发（穿过空点+己方棋子，仅被对方棋子阻挡）
 # 这样圈内被己方棋子分割的空点也能被正确计入
 # "可合法落子" = 落子后有气，或虽无气但能立即提吃对方棋子（禁入点不计）
-static func count_legal_empty_points(board: BoardModel, group: Dictionary) -> int:
+# early_return_at: 短路阈值，找到该数量即立即返回（-1=不短路，精确计数）
+static func count_legal_empty_points(board: BoardModel, group: Dictionary, early_return_at: int = -1) -> int:
 	var stones: Array = group.stones
 	var color: int = group.color
 	var opp: int = Const.opponent(color)
@@ -113,13 +115,15 @@ static func count_legal_empty_points(board: BoardModel, group: Dictionary) -> in
 			if not visited.has(ni) and board.get_at(n[0], n[1]) != opp:
 				stack.append(n)
 
-	# 统计可合法落子的空点
+	# 统计可合法落子的空点（短路：达到阈值即返回）
 	var count: int = 0
 	for idx in region:
 		var r: int = idx / size
 		var c: int = idx % size
 		if _is_legal_move(board, r, c, color):
 			count += 1
+			if early_return_at > 0 and count >= early_return_at:
+				return count
 	return count
 
 # 检查落子是否合法（规则6.5判定标准，不涉及劫争）

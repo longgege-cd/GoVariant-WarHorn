@@ -41,13 +41,6 @@ var _log_overlay: Control = null  # 当前的日志覆盖弹窗实例
 # 围空/围困变化检测（用于触发特效）
 var _prev_enclosures: Array = []  # 上次围空列表
 var _prev_sieged_stones: Dictionary = {}  # 上次被围困棋子索引集合 {idx -> true}
-# 得分浮动文字仅在第一次围空/歼灭/围困成功时显示（避免每手都弹）
-var _first_territory_popup_shown: bool = false
-var _first_annihilate_popup_shown: bool = false
-var _first_siege_popup_shown: bool = false
-# 扣减浮动文字仅在第一次围空失守/围困解除时显示
-var _first_territory_lost_popup_shown: bool = false
-var _first_siege_broken_popup_shown: bool = false
 # 计时器系统
 var _timer: TimerSystem = null
 var _time_setting: Dictionary = {}  # 思考时间配置（从 StartMenu 传入）
@@ -290,12 +283,6 @@ func _new_game() -> void:
 	# 重置围空/围困状态
 	_prev_enclosures = session.cached_enclosures().duplicate(true)
 	_prev_sieged_stones = _collect_sieged_stones()
-	# 重置得分浮动文字"首次显示"标志（新对局重新触发首次提示）
-	_first_territory_popup_shown = false
-	_first_annihilate_popup_shown = false
-	_first_siege_popup_shown = false
-	_first_territory_lost_popup_shown = false
-	_first_siege_broken_popup_shown = false
 	# 初始化计时器（若配置了思考时间）
 	if _time_setting.is_empty():
 		_time_setting = {"main": -1.0, "byoyomi": 0, "byoyomi_duration": 0.0}
@@ -541,15 +528,26 @@ func _on_move_committed(outcome: Dictionary) -> void:
 		EffectsPlayer.play_capture(outcome.captures, outcome.captured_color)
 		# 计算歼灭分：在己方领土/边境提吃 +2/子
 		var annihilate_count: int = 0
+		# 计算战损分：己方棋子在己方防御区被提吃 -2/子
+		var war_loss_count: int = 0
+		var war_loss_pos: Vector2i = Vector2i(-1, -1)
+		var captured_c: int = outcome.captured_color
 		for cap_pos in outcome.captures:
 			if Const.is_defense_zone(cap_pos.y, mover_color):
 				annihilate_count += 1
+			# 战损：被提方在自己的防御区失去棋子
+			if Const.is_defense_zone(cap_pos.y, captured_c):
+				war_loss_count += 1
+				if war_loss_pos.x < 0:
+					war_loss_pos = cap_pos
 		if annihilate_count > 0:
 			var gain: int = annihilate_count * 2
 			var popup_pos: Vector2i = outcome.captures[0]
-			if not _first_annihilate_popup_shown:
-				EffectsPlayer.play_score_popup("歼灭 +%d" % gain, popup_pos, mover_color, "annihilate")
-				_first_annihilate_popup_shown = true
+			EffectsPlayer.play_score_popup("歼灭 +%d" % gain, popup_pos, mover_color, "annihilate")
+		# 战损扣减动画（被提方视角）
+		if war_loss_count > 0:
+			var loss: int = war_loss_count * 2
+			EffectsPlayer.play_score_popup("战损 -%d" % loss, war_loss_pos, captured_c, "territory_lost")
 	if outcome.get("deployed", false):
 		# 部署特种部队：用部署特效（己方视角下在位置画，对方视角下画在棋盘中心避免泄露）
 		EffectsPlayer.play_special_deploy(mover_color, outcome.placed)
@@ -725,11 +723,9 @@ func _detect_and_trigger_territory_siege() -> void:
 					new_pts.append(p)
 			if not new_pts.is_empty():
 				EffectsPlayer.play_territory_formed(new_pts, c)
-				# 围空得分文字：仅在第一次围空成功时显示
-				if not _first_territory_popup_shown:
-					var territory_gain: int = new_pts.size() * 2
-					EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, new_pts[0], c, "territory")
-					_first_territory_popup_shown = true
+				# 围空得分文字：每次围空扩展都显示
+				var territory_gain: int = new_pts.size() * 2
+				EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, new_pts[0], c, "territory")
 			if matched_prev_idx.has(c):
 				matched_prev_idx[c][best_idx] = true
 			else:
@@ -738,10 +734,8 @@ func _detect_and_trigger_territory_siege() -> void:
 			# 全新围空：所有点都触发特效
 			if not curr_pts.is_empty():
 				EffectsPlayer.play_territory_formed(curr_pts, c)
-				if not _first_territory_popup_shown:
-					var territory_gain: int = curr_pts.size() * 2
-					EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, curr_pts[0], c, "territory")
-					_first_territory_popup_shown = true
+				var territory_gain: int = curr_pts.size() * 2
+				EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, curr_pts[0], c, "territory")
 	# 未匹配的 prev 围空 → 失守（消失或部分失去）
 	for c in prev_by_color.keys():
 		var prev_list: Array = prev_by_color[c]
@@ -753,11 +747,9 @@ func _detect_and_trigger_territory_siege() -> void:
 			var lost_pts: Array = prev_list[i].points
 			if not lost_pts.is_empty():
 				EffectsPlayer.play_territory_lost(lost_pts, c)
-				# 围空失守扣减文字：仅在第一次失守时显示
-				if not _first_territory_lost_popup_shown:
-					var territory_loss: int = lost_pts.size() * 2
-					EffectsPlayer.play_score_popup("围空 -%d" % territory_loss, lost_pts[0], c, "territory_lost")
-					_first_territory_lost_popup_shown = true
+				# 围空失守扣减文字：每次失守都显示
+				var territory_loss: int = lost_pts.size() * 2
+				EffectsPlayer.play_score_popup("围空 -%d" % territory_loss, lost_pts[0], c, "territory_lost")
 	_prev_enclosures = curr_encs.duplicate(true)
 	# 2. 围困变化检测
 	var curr_sieged: Dictionary = _collect_sieged_stones()
@@ -775,25 +767,21 @@ func _detect_and_trigger_territory_siege() -> void:
 			broken_sieged.append(Vector2i(col, row))
 	if not new_sieged.is_empty():
 		EffectsPlayer.play_siege(new_sieged)
-		# 围困得分文字：仅在第一次围困成功时显示
-		if not _first_siege_popup_shown:
-			var siege_gain: int = new_sieged.size()
-			var first_pos: Vector2i = new_sieged[0]
-			var victim_color: int = session.board.get_at(first_pos.y, first_pos.x)
-			var sieger_color: int = Const.opponent(victim_color)
-			EffectsPlayer.play_score_popup("围困 +%d" % siege_gain, first_pos, sieger_color, "siege")
-			_first_siege_popup_shown = true
+		# 围困得分文字：每次围困成功都显示
+		var siege_gain: int = new_sieged.size()
+		var first_pos: Vector2i = new_sieged[0]
+		var victim_color: int = session.board.get_at(first_pos.y, first_pos.x)
+		var sieger_color: int = Const.opponent(victim_color)
+		EffectsPlayer.play_score_popup("围困 +%d" % siege_gain, first_pos, sieger_color, "siege")
 	if not broken_sieged.is_empty():
 		EffectsPlayer.play_siege_broken(broken_sieged)
-		# 围困解除扣减文字：仅在第一次解除时显示（仅当脱困棋子仍存活时）
-		if not _first_siege_broken_popup_shown:
-			var broken_pos: Vector2i = broken_sieged[0]
-			var victim_c: int = session.board.get_at(broken_pos.y, broken_pos.x)
-			if victim_c != Const.EMPTY:
-				var sieger_c: int = Const.opponent(victim_c)
-				var siege_loss: int = broken_sieged.size()
-				EffectsPlayer.play_score_popup("围困 -%d" % siege_loss, broken_pos, sieger_c, "siege_broken")
-				_first_siege_broken_popup_shown = true
+		# 围困解除扣减文字：每次解除都显示（仅当脱困棋子仍存活时）
+		var broken_pos: Vector2i = broken_sieged[0]
+		var victim_c: int = session.board.get_at(broken_pos.y, broken_pos.x)
+		if victim_c != Const.EMPTY:
+			var sieger_c: int = Const.opponent(victim_c)
+			var siege_loss: int = broken_sieged.size()
+			EffectsPlayer.play_score_popup("围困 -%d" % siege_loss, broken_pos, sieger_c, "siege_broken")
 	_prev_sieged_stones = curr_sieged
 
 # ===== PvE 模式 =====

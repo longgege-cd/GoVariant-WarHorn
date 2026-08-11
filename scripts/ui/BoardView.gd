@@ -27,9 +27,9 @@ var _theme: BaseTheme = null
 var _last_redraw_time: int = 0  # 限频重绘（呼吸动画 30fps）
 var _error_flash: float = 0.0  # 非法操作红色边框闪烁强度（0~1，逐帧衰减）
 var _deploy_mode: bool = false  # 部署特种部队模式（边框呼吸 + 顶部小横条提示）
-# 开局领土/边境线波浪动画（新对局后持续 3.5 秒）
+# 开局领土/边境线波浪动画（新对局后持续 2.5 秒）
 var _opening_anim_time: float = 0.0  # 剩余秒数（>0 表示动画进行中）
-const OPENING_ANIM_DURATION: float = 3.5  # 总时长
+const OPENING_ANIM_DURATION: float = 2.5  # 总时长
 
 func _ready() -> void:
 	_theme = ThemeManager.current

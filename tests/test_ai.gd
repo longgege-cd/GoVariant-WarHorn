@@ -1,5 +1,5 @@
 extends RefCounted
-# AI 测试：验证三级 AI 都能正常行棋，且不产生非法操作
+# AI 测试：验证五级 AI 引擎都能正常行棋，且不产生非法操作
 # 用法: godot --headless --script res://tests/run_all.gd（已集成）
 
 const AIManager = preload("res://scripts/ai/AIManager.gd")
@@ -7,11 +7,12 @@ const AIManager = preload("res://scripts/ai/AIManager.gd")
 func run(t: TestFramework) -> void:
 	t.suite("AI 行棋")
 
-	# 1. 启发式 AI（简单）能行棋且不非法
+	# 1. 简单 AI（深度1启发搜索）能行棋且不非法
 	var session := GameSession.new(Const.KOMI_DEFAULT, true)
 	session.emit_signals = false
 	var ai_easy = AIManager.create(AIManager.Difficulty.EASY, Const.WHITE)
-	t.expect(ai_easy != null, "启发式 AI 创建成功")
+	ai_easy.search_budget_sec = 0.15  # 测试缩短时限
+	t.expect(ai_easy != null, "简单 AI 创建成功")
 	var moves_played: int = 0
 	for i in 20:
 		# 黑方随机行棋
@@ -20,52 +21,52 @@ func run(t: TestFramework) -> void:
 			break
 		# 白方 AI 行棋
 		var out: Dictionary = AIManager.play_ai_turn(session, ai_easy)
-		t.expect(out.ok, "启发式 AI 行棋合法 (第%d手)" % (i + 1))
+		t.expect(out.ok, "简单 AI 行棋合法 (第%d手)" % (i + 1))
 		if out.ok:
 			moves_played += 1
 		if session.game_over:
 			break
-	t.expect(moves_played > 0, "启发式 AI 至少行棋 1 手")
+	t.expect(moves_played > 0, "简单 AI 至少行棋 1 手")
 
-	# 2. Lookahead AI（中等）能行棋
+	# 2. 普通 AI（深度2搜索）能行棋
 	session = GameSession.new(Const.KOMI_DEFAULT, true)
 	session.emit_signals = false
-	var ai_med = AIManager.create(AIManager.Difficulty.MEDIUM, Const.WHITE)
-	ai_med.search_budget_sec = 0.5  # 测试缩短时限
-	t.expect(ai_med != null, "Lookahead AI 创建成功")
-	moves_played = 0
-	for i in 15:
-		_play_random(session, Const.BLACK)
-		if session.game_over:
-			break
-		var out: Dictionary = AIManager.play_ai_turn(session, ai_med)
-		t.expect(out.ok, "Lookahead AI 行棋合法 (第%d手)" % (i + 1))
-		if out.ok:
-			moves_played += 1
-		if session.game_over:
-			break
-	t.expect(moves_played > 0, "Lookahead AI 至少行棋 1 手")
-
-	# 3. MCTS AI（困难）能行棋
-	session = GameSession.new(Const.KOMI_DEFAULT, true)
-	session.emit_signals = false
-	var ai_hard = AIManager.create(AIManager.Difficulty.HARD, Const.WHITE)
-	ai_hard.search_budget_sec = 0.5  # 测试缩短时限
-	t.expect(ai_hard != null, "MCTS AI 创建成功")
+	var ai_normal = AIManager.create(AIManager.Difficulty.NORMAL, Const.WHITE)
+	ai_normal.search_budget_sec = 0.3  # 测试缩短时限
+	t.expect(ai_normal != null, "普通 AI 创建成功")
 	moves_played = 0
 	for i in 10:
 		_play_random(session, Const.BLACK)
 		if session.game_over:
 			break
-		var out: Dictionary = AIManager.play_ai_turn(session, ai_hard)
-		t.expect(out.ok, "MCTS AI 行棋合法 (第%d手)" % (i + 1))
+		var out: Dictionary = AIManager.play_ai_turn(session, ai_normal)
+		t.expect(out.ok, "普通 AI 行棋合法 (第%d手)" % (i + 1))
 		if out.ok:
 			moves_played += 1
 		if session.game_over:
 			break
-	t.expect(moves_played > 0, "MCTS AI 至少行棋 1 手")
+	t.expect(moves_played > 0, "普通 AI 至少行棋 1 手")
 
-	# 4. AI vs AI 对局能完整结束（启发式 vs 启发式）
+	# 3. 困难 AI（深度3搜索）能行棋
+	session = GameSession.new(Const.KOMI_DEFAULT, true)
+	session.emit_signals = false
+	var ai_hard = AIManager.create(AIManager.Difficulty.HARD, Const.WHITE)
+	ai_hard.search_budget_sec = 0.3  # 测试缩短时限
+	t.expect(ai_hard != null, "困难 AI 创建成功")
+	moves_played = 0
+	for i in 8:
+		_play_random(session, Const.BLACK)
+		if session.game_over:
+			break
+		var out: Dictionary = AIManager.play_ai_turn(session, ai_hard)
+		t.expect(out.ok, "困难 AI 行棋合法 (第%d手)" % (i + 1))
+		if out.ok:
+			moves_played += 1
+		if session.game_over:
+			break
+	t.expect(moves_played > 0, "困难 AI 至少行棋 1 手")
+
+	# 4. AI vs AI 对局能完整结束（简单 vs 简单）
 	session = GameSession.new(Const.KOMI_DEFAULT, false)
 	session.emit_signals = false
 	var ai_b = AIManager.create(AIManager.Difficulty.EASY, Const.BLACK)

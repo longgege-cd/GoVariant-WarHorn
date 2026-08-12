@@ -47,6 +47,9 @@ func _init() -> void:
 	var ai_tests := preload("res://tests/test_ai.gd").new()
 	ai_tests.run(t)
 
+	var ai_engine_tests := preload("res://tests/test_ai_engine.gd").new()
+	ai_engine_tests.run(t)
+
 	# 联机模块测试需 autoload，通过场景方式运行：res://tests/test_net.tscn
 	# 此处不集成（--script 模式下 autoload 编译期不可见）
 

@@ -215,6 +215,39 @@ func _run_tests() -> void:
 	screen.queue_free()
 	await get_tree().process_frame
 
+	# ===== 15. 主菜单：人机对战合并 + 二级难度选择页 =====
+	var menu = preload("res://scripts/ui/StartMenu.gd").new()
+	add_child(menu)
+	await get_tree().process_frame
+	t.expect(menu._main_root != null, "主菜单根容器已构建")
+	t.expect(menu._difficulty_view != null, "二级难度视图已构建")
+	# 人机对战已合并为一个入口（MODE_ENTRIES 中 pve 仅 1 项）
+	var pve_count: int = 0
+	for e in menu.MODE_ENTRIES:
+		if e.mode == "pve":
+			pve_count += 1
+	t.expect_eq(pve_count, 1, "人机对战已合并为一个入口")
+	# 选中人机对战（索引1）并点开始 → 进入二级难度页
+	menu._selected_idx = 1
+	menu._on_start()
+	t.expect(menu._difficulty_view.visible, "二级难度选择页显示")
+	t.expect(not menu._main_root.visible, "二级页时主菜单隐藏")
+	# 返回
+	menu._hide_difficulty_view()
+	t.expect(menu._main_root.visible, "返回后主菜单恢复")
+	t.expect(not menu._difficulty_view.visible, "返回后二级页隐藏")
+	# 选难度 → 发出 start_requested
+	var emitted: Dictionary = {"mode": "", "diff": -1}
+	menu.start_requested.connect(func(mode: String, diff: int, _ts: Dictionary, _o: Dictionary):
+		emitted["mode"] = mode
+		emitted["diff"] = diff
+	)
+	menu._on_difficulty_chosen(AIDifficulty.Difficulty.HARD)
+	t.expect_eq(emitted.get("mode", ""), "pve", "发出 pve 模式")
+	t.expect_eq(emitted.get("diff", -1), AIDifficulty.Difficulty.HARD, "难度=困难")
+	menu.queue_free()
+	await get_tree().process_frame
+
 	# 汇总
 	print("\n========== UI 集成测试结果 ==========")
 	print("通过: %d   失败: %d" % [t.passed, t.failed])

@@ -1,12 +1,14 @@
-# AI 管理器：按难度创建 AI 实例，协调 AI 行棋
+# AI 管理器：按难度创建 AI 引擎实例，协调 AI 行棋
 #
-# 难度等级：
-#   EASY   = 启发式 AI（提子/救援/价值选择）
-#   MEDIUM = Lookahead AI（2层 minimax + alpha-beta）
-#   HARD   = MCTS AI（蒙特卡洛树搜索）
+# 难度等级（参考《AI对手算法设计文档》第六章）：
+#   EASY   = 简单（15 候选 / 深1）
+#   NORMAL = 普通（25 候选 / 深2）
+#   HARD   = 困难（40 候选 / 深3）
+#   EXPERT = 专家（40 候选 / 深3 + 关键局面 MCTS 200 模拟）
+#   MASTER = 大师（50 候选 / 深4 + 关键局面 MCTS 500 模拟）
 #
 # 用法：
-#   var ai = AIManager.create(AIManager.Difficulty.MEDIUM, Const.WHITE)
+#   var ai = AIManager.create(AIManager.Difficulty.NORMAL, Const.WHITE)
 #   var move = ai.choose_move(session)
 #   match move.type:
 #       "move": session.play_move(...)
@@ -15,41 +17,17 @@
 class_name AIManager
 extends RefCounted
 
-enum Difficulty { EASY, MEDIUM, HARD }
+enum Difficulty { EASY, NORMAL, HARD, EXPERT, MASTER }
 
-const HeuristicAI = preload("res://scripts/ai/HeuristicAI.gd")
-const LookaheadAI = preload("res://scripts/ai/LookaheadAI.gd")
-const MCTSAI = preload("res://scripts/ai/MCTSAI.gd")
+const AIEngineScript = preload("res://scripts/ai/AIEngine.gd")
 
-# 创建 AI 实例
+# 创建 AI 实例（按难度配置引擎）
 static func create(difficulty: int, color: int):
-	var ai
-	match difficulty:
-		Difficulty.EASY:
-			ai = HeuristicAI.new(color)
-			ai.search_budget_sec = 0.5
-		Difficulty.MEDIUM:
-			ai = LookaheadAI.new(color)
-			ai.search_budget_sec = 1.0
-		Difficulty.HARD:
-			ai = MCTSAI.new(color)
-			ai.search_budget_sec = 2.0
-		_:
-			ai = HeuristicAI.new(color)
-			ai.search_budget_sec = 0.5
-	return ai
+	return AIEngineScript.new(color, difficulty)
 
 # 难度名称
 static func difficulty_name(d: int) -> String:
-	match d:
-		Difficulty.EASY:
-			return "简单"
-		Difficulty.MEDIUM:
-			return "中等"
-		Difficulty.HARD:
-			return "困难"
-		_:
-			return "未知"
+	return AIDifficulty.name_of(d)
 
 # 执行 AI 行棋（同步，返回 outcome）
 static func play_ai_turn(session: GameSession, ai) -> Dictionary:

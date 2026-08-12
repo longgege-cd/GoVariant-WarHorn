@@ -102,7 +102,7 @@ func _build_ui() -> void:
 	_mode_med_btn = _make_button("中等", 60, 30)
 	_mode_med_btn.toggle_mode = true
 	_mode_med_btn.visible = false
-	_mode_med_btn.pressed.connect(func(): _on_mode_selected("pve", AIManager.Difficulty.MEDIUM))
+	_mode_med_btn.pressed.connect(func(): _on_mode_selected("pve", AIManager.Difficulty.NORMAL))
 	add_child(_mode_med_btn)
 
 	_mode_hard_btn = _make_button("困难", 60, 30)
@@ -173,7 +173,7 @@ func _on_mode_selected(mode: String, difficulty: int) -> void:
 		match difficulty:
 			AIManager.Difficulty.EASY:
 				active_btn = _mode_easy_btn
-			AIManager.Difficulty.MEDIUM:
+			AIManager.Difficulty.NORMAL:
 				active_btn = _mode_med_btn
 			AIManager.Difficulty.HARD:
 				active_btn = _mode_hard_btn

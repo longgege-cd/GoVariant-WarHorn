@@ -124,7 +124,7 @@ func _build_ui() -> void:
 
 	_add_mode_button(mode_row1, "本 地 双 人", "pvp", 0)
 	_add_mode_button(mode_row1, "简  单", "pve", AIManager.Difficulty.EASY)
-	_add_mode_button(mode_row1, "中  等", "pve", AIManager.Difficulty.MEDIUM)
+	_add_mode_button(mode_row1, "中  等", "pve", AIManager.Difficulty.NORMAL)
 	_add_mode_button(mode_row2, "困  难", "pve", AIManager.Difficulty.HARD)
 
 	# 分隔线

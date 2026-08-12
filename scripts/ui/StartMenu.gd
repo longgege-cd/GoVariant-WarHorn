@@ -17,9 +17,7 @@ const AIManager = preload("res://scripts/ai/AIManager.gd")
 
 const MODE_ENTRIES := [
 	{"name": "本地双人", "desc": "同一屏幕对弈", "mode": "pvp", "diff": 0},
-	{"name": "人机 · 简单", "desc": "AI 新手", "mode": "pve", "diff": 0},
-	{"name": "人机 · 中等", "desc": "AI 老练", "mode": "pve", "diff": 1},
-	{"name": "人机 · 困难", "desc": "AI 精通", "mode": "pve", "diff": 2},
+	{"name": "人机对战", "desc": "选择 AI 难度", "mode": "pve", "diff": -1},
 	{"name": "联机对战", "desc": "主机或加入", "mode": "online", "diff": 0},
 ]
 
@@ -56,6 +54,10 @@ var _komi_value: float = Const.KOMI_DEFAULT  # 当前贴目（默认 3.5）
 var _komi_label: Label = null  # 贴目显示标签
 var _piece_option: OptionButton = null  # 兵力下拉
 
+# 主菜单根容器与二级难度选择视图
+var _main_root: Control = null
+var _difficulty_view: Control = null
+
 # 动画引用节点
 var _title: Label = null
 var _subtitle: Label = null
@@ -73,6 +75,7 @@ func _ready() -> void:
 func _build_ui() -> void:
 	# 根容器：垂直居中，紧凑
 	var root := VBoxContainer.new()
+	_main_root = root
 	root.set_anchors_preset(PRESET_FULL_RECT)
 	root.alignment = BoxContainer.ALIGNMENT_CENTER
 	root.add_theme_constant_override("separation", 0)
@@ -233,6 +236,83 @@ func _build_ui() -> void:
 	var quit_btn := _make_text_button("退出", true)
 	quit_btn.pressed.connect(func(): quit_requested.emit())
 	_bottom_row.add_child(quit_btn)
+
+	# 二级难度选择视图（人机对战：选择 AI 难度）
+	_build_difficulty_view()
+
+# ===== 二级难度选择视图（人机对战） =====
+func _build_difficulty_view() -> void:
+	_difficulty_view = Control.new()
+	_difficulty_view.set_anchors_preset(PRESET_FULL_RECT)
+	_difficulty_view.visible = false
+	add_child(_difficulty_view)
+
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(PRESET_FULL_RECT)
+	root.alignment = BoxContainer.ALIGNMENT_CENTER
+	root.add_theme_constant_override("separation", 12)
+	_difficulty_view.add_child(root)
+
+	var title := Label.new()
+	title.text = "选择 AI 难度"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_color_override("font_color", UITheme.C_GOLD)
+	root.add_child(title)
+
+	_add_spacer(root, 10)
+
+	# 5 档难度按钮（文档第六章：简单/普通/困难/专家/大师）
+	var diffs := [
+		AIDifficulty.Difficulty.EASY,
+		AIDifficulty.Difficulty.NORMAL,
+		AIDifficulty.Difficulty.HARD,
+		AIDifficulty.Difficulty.EXPERT,
+		AIDifficulty.Difficulty.MASTER,
+	]
+	for d in diffs:
+		var btn := Button.new()
+		btn.text = "%s  —  %s" % [AIDifficulty.name_of(d), AIDifficulty.desc_of(d)]
+		btn.custom_minimum_size = Vector2(320, 42)
+		btn.size_flags_horizontal = SIZE_SHRINK_CENTER
+		btn.add_theme_font_size_override("font_size", 16)
+		btn.add_theme_color_override("font_color", UITheme.C_GOLD)
+		btn.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
+		btn.add_theme_stylebox_override("normal", _make_btn_style(false))
+		btn.add_theme_stylebox_override("hover", _make_btn_style(true))
+		btn.add_theme_stylebox_override("pressed", _make_btn_style(true))
+		btn.pressed.connect(_on_difficulty_chosen.bind(d))
+		root.add_child(btn)
+
+	_add_spacer(root, 16)
+
+	var back_btn := Button.new()
+	back_btn.text = "返 回"
+	back_btn.custom_minimum_size = Vector2(160, 36)
+	back_btn.size_flags_horizontal = SIZE_SHRINK_CENTER
+	back_btn.flat = true
+	back_btn.add_theme_font_size_override("font_size", 14)
+	back_btn.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	back_btn.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
+	back_btn.pressed.connect(_hide_difficulty_view)
+	root.add_child(back_btn)
+
+func _show_difficulty_view() -> void:
+	if _main_root != null:
+		_main_root.visible = false
+	if _difficulty_view != null:
+		_difficulty_view.visible = true
+
+func _hide_difficulty_view() -> void:
+	if _difficulty_view != null:
+		_difficulty_view.visible = false
+	if _main_root != null:
+		_main_root.visible = true
+
+func _on_difficulty_chosen(difficulty: int) -> void:
+	_hide_difficulty_view()
+	var entry: Dictionary = MODE_ENTRIES[_selected_idx]
+	_emit_start(entry, difficulty)
 
 # 构建一行思考时间选项（带组标签）
 func _add_time_row(parent: Container, group_label: String, group_key: String) -> void:
@@ -395,6 +475,13 @@ func _on_item_selected(idx: int) -> void:
 
 func _on_start() -> void:
 	var entry: Dictionary = MODE_ENTRIES[_selected_idx]
+	if entry.mode == "pve":
+		# 人机对战：进入二级页选择 AI 难度
+		_show_difficulty_view()
+		return
+	_emit_start(entry, entry.diff)
+
+func _emit_start(entry: Dictionary, difficulty: int) -> void:
 	var time_entry: Dictionary = TIME_ENTRIES[_selected_time_idx]
 	var time_setting: Dictionary = {
 		"main": time_entry.main,
@@ -405,7 +492,7 @@ func _on_start() -> void:
 		"komi": _komi_value,
 		"piece_limit": PIECE_ENTRIES[_piece_option.selected],
 	}
-	start_requested.emit(entry.mode, entry.diff, time_setting, options)
+	start_requested.emit(entry.mode, difficulty, time_setting, options)
 
 # 贴目加减按钮：dir = -1 减 / +1 加，变化量 0.5
 func _on_komi_step(dir: int) -> void:

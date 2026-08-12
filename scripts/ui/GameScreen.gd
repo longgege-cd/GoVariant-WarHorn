@@ -1084,6 +1084,8 @@ func _show_status(msg: String) -> void:
 		return
 	_status_label.text = msg
 	_status_label.visible = true
+	# 重置为金色（覆盖此前 _show_error 的红色）
+	_status_label.add_theme_color_override("font_color", preload("res://scripts/ui/UITheme.gd").C_GOLD)
 	# 10 秒后自动隐藏
 	var lbl := _status_label
 	await get_tree().create_timer(10.0).timeout
@@ -1094,11 +1096,15 @@ func _show_error(msg: String) -> void:
 	# 棋盘边框红色闪烁反馈
 	if board_view != null:
 		board_view.flash_error()
-	# 状态条红色文字提示
+	# 状态条红色文字提示（4 秒后自动隐藏，避免残留一直显示）
 	if _status_label != null:
 		_status_label.text = msg
 		_status_label.visible = true
 		_status_label.add_theme_color_override("font_color", Color(0.95, 0.4, 0.35))
+		var lbl := _status_label
+		await get_tree().create_timer(4.0).timeout
+		if is_instance_valid(lbl) and lbl.text == msg:
+			lbl.visible = false
 
 func _update_controls() -> void:
 	control_panel.update_state(session, _deploy_mode)

@@ -195,6 +195,22 @@ func _run_tests() -> void:
 	t.expect(screen._ai == null, "AI 实例已清空")
 	t.expect_eq(screen.session.ply, 0, "切回 PvP 后新对局 ply=0")
 
+	# ===== 14. 状态提示条：_show_error 自动隐藏 + 颜色重置 =====
+	# 修复：_show_error 无自动隐藏导致"非您的回合"永久残留；_show_status 不重置红色
+	t.expect(screen._status_label != null, "状态条已创建")
+	screen._show_error("非您的回合")
+	t.expect(screen._status_label.visible, "错误提示显示")
+	t.expect_eq(screen._status_label.text, "非您的回合", "错误文本正确")
+	await get_tree().create_timer(4.2).timeout
+	t.expect(not screen._status_label.visible, "错误提示 4 秒后自动隐藏（不一直显示）")
+	# _show_error 后再 _show_status：状态文本覆盖错误文本
+	screen._show_error("测试错误")
+	screen._show_status("对局开始 · 您执黑方")
+	t.expect(screen._status_label.visible, "状态提示显示")
+	t.expect_eq(screen._status_label.text, "对局开始 · 您执黑方", "状态文本覆盖错误文本")
+	await get_tree().create_timer(10.2).timeout
+	t.expect(not screen._status_label.visible, "状态提示 10 秒后自动隐藏")
+
 	# 清理
 	screen.queue_free()
 	await get_tree().process_frame

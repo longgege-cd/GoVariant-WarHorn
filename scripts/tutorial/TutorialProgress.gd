@@ -11,6 +11,8 @@ const SAVE_PATH: String = "user://tutorial_progress.json"
 const TOTAL_LESSONS: int = 14
 
 # 读取进度（不存在则返回初始状态）
+# 注意：Godot 4.7 JSON.parse_string 将整数字面量解析为 float，
+# 导致 completed/unlocked 元素为 0.0，Array.find(int) 严格比较找不到 → 需归一化为 int
 static func load_progress() -> Dictionary:
 	var p: Dictionary = {"unlocked": [0], "completed": []}
 	if FileAccess.file_exists(SAVE_PATH):
@@ -19,7 +21,16 @@ static func load_progress() -> Dictionary:
 			var data = JSON.parse_string(f.get_as_text())
 			if data is Dictionary:
 				p = data
+	p["completed"] = _norm_int_array(p.get("completed", []))
+	p["unlocked"] = _norm_int_array(p.get("unlocked", []))
 	return p
+
+# 归一化为 int 数组（JSON 解析回 float 0.0 需转回 int 0）
+static func _norm_int_array(arr: Array) -> Array:
+	var out: Array = []
+	for v in arr:
+		out.append(int(v))
+	return out
 
 # 保存进度
 static func save_progress(p: Dictionary) -> void:
@@ -39,12 +50,13 @@ static func is_completed(p: Dictionary, idx: int) -> bool:
 
 # 记录关卡完成（更新 completed；unlocked 按序补充）
 static func mark_completed(p: Dictionary, idx: int) -> void:
-	var completed: Array = p.get("completed", [])
+	idx = int(idx)  # 防御：外部传入 float 0.0 等
+	var completed: Array = _norm_int_array(p.get("completed", []))
 	if completed.find(idx) < 0:
 		completed.append(idx)
 		completed.sort()
 	p["completed"] = completed
-	var unlocked: Array = p.get("unlocked", [])
+	var unlocked: Array = _norm_int_array(p.get("unlocked", []))
 	# 解锁下一关（以及跳过的可选关）
 	if idx + 1 < TOTAL_LESSONS and unlocked.find(idx + 1) < 0:
 		unlocked.append(idx + 1)

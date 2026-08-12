@@ -193,6 +193,11 @@ func _test_progress(t: TestFramework) -> void:
 	var p2: Dictionary = TutorialProgress.load_progress()
 	t.expect_eq(p2.get("completed", []).size(), TutorialProgress.TOTAL_LESSONS, "保存后回读完成数一致")
 	t.expect_eq(p2.get("unlocked", []).size(), TutorialProgress.TOTAL_LESSONS, "保存后回读解锁数一致")
+	# 防回归：Godot 4.7 JSON.parse_string 把整数解析为 float，
+	# 若不归一化，Array.find(int) 找不到 float 元素 → 解锁判定失效
+	t.expect_eq(typeof(p2.get("completed", [])[0]), TYPE_INT, "回读 completed 元素为 int（防 float 回归）")
+	t.expect_eq(typeof(p2.get("unlocked", [])[0]), TYPE_INT, "回读 unlocked 元素为 int（防 float 回归）")
+	t.expect(p2.get("completed", []).find(0) >= 0, "回读后 find(int) 可匹配")
 
 	# 恢复真实进度
 	TutorialProgress.reset_progress()

@@ -268,6 +268,19 @@ func _run_tests() -> void:
 	await get_tree().process_frame
 
 	# TutorialScreen：构建关卡列表 + 打开关卡
+	# 注意：教程完成会写 user:// 进度文件，先备份、重置保证测试环境干净、结束后恢复
+	var prog_file: String = TutorialProgress.SAVE_PATH
+	var prog_backup: String = "user://tutorial_progress_ui.bak"
+	if FileAccess.file_exists(prog_file):
+		var pf := FileAccess.open(prog_file, FileAccess.READ)
+		if pf:
+			var pb := FileAccess.open(prog_backup, FileAccess.WRITE)
+			if pb:
+				pb.store_string(pf.get_as_text())
+				pb.close()
+			pf.close()
+	TutorialProgress.reset_progress()
+
 	var tscreen = preload("res://scripts/tutorial/TutorialScreen.gd").new()
 	add_child(tscreen)
 	await get_tree().process_frame
@@ -282,18 +295,6 @@ func _run_tests() -> void:
 	await get_tree().process_frame
 
 	# TutorialLesson 直接实例化（关卡0）且不报错
-	# 注意：教程完成会写 user:// 进度文件，先备份、结束后恢复
-	var prog_file: String = TutorialProgress.SAVE_PATH
-	var prog_backup: String = "user://tutorial_progress_ui.bak"
-	if FileAccess.file_exists(prog_file):
-		var pf := FileAccess.open(prog_file, FileAccess.READ)
-		if pf:
-			var pb := FileAccess.open(prog_backup, FileAccess.WRITE)
-			if pb:
-				pb.store_string(pf.get_as_text())
-				pb.close()
-			pf.close()
-
 	var lv = preload("res://scripts/tutorial/TutorialLesson.gd").new()
 	lv.configure(0, TutorialProgress.load_progress())
 	add_child(lv)
@@ -323,6 +324,30 @@ func _run_tests() -> void:
 	t.expect_eq(lv.lesson.get("id", ""), "1-3", "关卡 2 数据为 1-3")
 	t.expect(not lv._completed, "新关卡状态重置")
 	lv.queue_free()
+	await get_tree().process_frame
+
+	# ===== 解锁链：完成关卡 → 返回列表 → 下一关解锁 =====
+	TutorialProgress.reset_progress()
+	tscreen = preload("res://scripts/tutorial/TutorialScreen.gd").new()
+	add_child(tscreen)
+	await get_tree().process_frame
+	t.expect(tscreen._lesson_btns[1].disabled, "重置后 1-2 锁定")
+	t.expect(not tscreen._lesson_btns[0].disabled, "重置后 1-1 解锁")
+	tscreen._open_lesson(0)
+	await get_tree().process_frame
+	var lv0: Node = tscreen._lesson_view
+	lv0._handle_zone_click(0, 0)
+	lv0._handle_zone_click(9, 9)
+	lv0._handle_zone_click(10, 10)
+	t.expect(lv0._completed, "1-1 三区点击完成")
+	t.expect(TutorialProgress.is_unlocked(lv0.progress, 1), "1-1 完成后 1-2 逻辑解锁")
+	# 返回列表 → 重建 → 1-2 按钮应可用
+	lv0.back_requested.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	t.expect(not tscreen._lesson_btns[1].disabled, "完成 1-1 返回列表后 1-2 解锁")
+	t.expect(str(tscreen._lesson_btns[0].text).contains("已完成"), "1-1 显示已完成")
+	tscreen.queue_free()
 	await get_tree().process_frame
 
 	# 恢复真实进度

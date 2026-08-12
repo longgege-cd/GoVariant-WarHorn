@@ -15,6 +15,7 @@ EffectsPlayer="*res://scripts/effects/EffectsPlayer.gd"
 AudioManager="*res://scripts/effects/AudioManager.gd"
 NetworkManager="*res://scripts/net/NetworkManager.gd"
 NetSync="*res://scripts/net/NetSync.gd"
+RoomDiscovery="*res://scripts/net/RoomDiscovery.gd"
 
 [display]
 window/size/viewport_width=1500

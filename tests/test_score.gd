@@ -264,13 +264,15 @@ func run(t: TestFramework) -> void:
 	s_komi35.play_move(Const.WHITE, 0, 0)
 	var fin_komi35 = s_komi35.final_result("贴目测试")
 	t.expect_eq(fin_komi35.black.final, -2.5, "komi=3.5: 黑 final = 1 - 3.5 = -2.5")
-	t.expect_eq(fin_komi35.komi, 3.5, "komi=3.5: 返回值携带正确贴目")
+	t.expect_eq(fin_komi35.black.komi, 3.5, "komi=3.5: 返回值携带正确贴目")
 	t.expect_eq(fin_komi35.winner, "白方胜", "komi=3.5: 白胜（-2.5 < 1）")
 
 	# 15. 贴目反转测试：komi 足够大时黑胜 → 白胜
-	#     黑在白境围大空（+8围空），白仅1活子 → 黑8 - komi vs 白1
-	#     komi=5.0 → 黑 3 > 白 1 → 黑胜
-	#     komi=10.0 → 黑 -2 < 白 1 → 白胜
+	#     黑12子：行9/10/11 在边境/白境得活子分8 + 圈内4空点围空分8 = 16；白仅1活子
+	#     黑16 - komi vs 白1
+	#     komi=5.0  → 黑 11 > 1 → 黑胜
+	#     komi=10.0 → 黑 6 > 1 → 黑胜
+	#     komi=16.0 → 黑 0 < 1 → 白胜（komi 足够大反转）
 	var s_big := GameSession.new(5.0, false)
 	for c in range(8, 12):
 		s_big.board.set_at(8, c, Const.BLACK)
@@ -280,7 +282,7 @@ func run(t: TestFramework) -> void:
 		s_big.board.set_at(r, 11, Const.BLACK)
 	s_big.board.set_at(0, 0, Const.WHITE)
 	var fin_big5 = s_big.final_result("贴目反转")
-	t.expect_eq(fin_big5.winner, "黑方胜", "komi=5.0: 黑胜（8-5=3 > 1）")
+	t.expect_eq(fin_big5.winner, "黑方胜", "komi=5.0: 黑胜（16-5=11 > 1）")
 
 	var s_big10 := GameSession.new(10.0, false)
 	for c in range(8, 12):
@@ -291,7 +293,18 @@ func run(t: TestFramework) -> void:
 		s_big10.board.set_at(r, 11, Const.BLACK)
 	s_big10.board.set_at(0, 0, Const.WHITE)
 	var fin_big10 = s_big10.final_result("贴目反转")
-	t.expect_eq(fin_big10.winner, "白方胜", "komi=10.0: 白胜（8-10=-2 < 1）")
+	t.expect_eq(fin_big10.winner, "黑方胜", "komi=10.0: 黑胜（16-10=6 > 1）")
+
+	var s_big16 := GameSession.new(16.0, false)
+	for c in range(8, 12):
+		s_big16.board.set_at(8, c, Const.BLACK)
+		s_big16.board.set_at(11, c, Const.BLACK)
+	for r in range(9, 11):
+		s_big16.board.set_at(r, 8, Const.BLACK)
+		s_big16.board.set_at(r, 11, Const.BLACK)
+	s_big16.board.set_at(0, 0, Const.WHITE)
+	var fin_big16 = s_big16.final_result("贴目反转")
+	t.expect_eq(fin_big16.winner, "白方胜", "komi=16.0: 白胜（16-16=0 < 1）")
 
 	# 16. 兵力上限可变测试：piece_limit 实例字段生效
 	#     piece_limit=99 → 第100子非法；默认112 → 第100子合法

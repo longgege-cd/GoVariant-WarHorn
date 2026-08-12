@@ -1,20 +1,21 @@
-# 联机管理器（autoload）
+# 联机管理器（autoload）— 权威主机模型
 #
 # 职责：
 #   - 管理 ENetMultiplayerPeer 生命周期（建主/加入/关闭）
 #   - 维护连接状态机（OFFLINE/HOSTING/CONNECTING/ONLINE）
 #   - 分配玩家颜色（主机=黑，客户端=白）
+#   - 检测对端加入/断开（基于 ENet 底层 peer_connected/peer_disconnected 信号）
 #   - 通知外部连接事件（信号）
 #
-# 架构：P2P 主机-客户端（Godot ENet）
-#   - 一方主机 create_server，另一方 create_client 加入
-#   - 回合制棋类，操作同步模型：各端只操作己方颜色，RPC 同步给对端
-#   - 主机为黑方先手，客户端为白方
+# 架构：权威主机（参考《联机对战.txt》）
+#   - 主机（Host）负责所有游戏逻辑的权威计算
+#   - 客户端（Client）只发送操作请求、接收主机广播的状态确认
+#   - 主机通过 multiplayer.peer_connected 信号检测客户端加入（ENet 底层，最可靠）
 #
 # 用法：
 #   NetworkManager.host_game(5005)
 #   NetworkManager.join_game("127.0.0.1", 5005)
-#   NetworkManager.peer_connected.connect(_on_peer)
+#   NetworkManager.player_joined.connect(_on_player_joined)
 #   NetworkManager.local_color  # 本地玩家颜色
 extends Node
 
@@ -22,9 +23,9 @@ extends Node
 enum State { OFFLINE, HOSTING, CONNECTING, ONLINE }
 
 signal hosted()                    # 主机已创建（等待客户端加入）
-signal joined()                    # 已连接到主机
-signal peer_connected(peer_id: int)  # 对端已连接
-signal peer_disconnected(peer_id: int)  # 对端断开
+signal joined()                    # 客户端已连接到主机
+signal player_joined(peer_id: int)  # 主机检测到对端加入（ENet 信号驱动）
+signal player_disconnected(peer_id: int)  # 对端断开
 signal connection_failed()         # 连接失败
 signal closed()                    # 连接已关闭
 
@@ -35,14 +36,23 @@ var _remote_peer_id: int = 0       # 对端 peer id（联机对手）
 # 本地玩家颜色：主机=黑，客户端=白
 var local_color: int = Const.BLACK
 
+func _ready() -> void:
+	# 权威主机：用 MultiplayerAPI.peer_connected 信号检测客户端加入（ENet 底层，最可靠）
+	var mp := get_tree().get_multiplayer()
+	mp.peer_connected.connect(_on_peer_connected)
+	mp.peer_disconnected.connect(_on_peer_disconnected)
+
 func _process(_delta: float) -> void:
-	# CONNECTING 状态下检测连接结果
+	# 客户端侧：CONNECTING 状态下检测连接结果
 	if _state == State.CONNECTING and _peer != null:
 		match _peer.get_connection_status():
 			MultiplayerPeer.CONNECTION_CONNECTED:
 				_state = State.ONLINE
 				_is_host = false
 				local_color = Const.WHITE
+				# 主机 peer_id 始终为 1
+				_remote_peer_id = 1
+				Log.i("NetworkManager: 已连接主机 peer_id=1")
 				joined.emit()
 			MultiplayerPeer.CONNECTION_DISCONNECTED:
 				_state = State.OFFLINE
@@ -79,9 +89,6 @@ func host_game(port: int, max_peers: int = 2) -> bool:
 	_state = State.HOSTING
 	_is_host = true
 	local_color = Const.BLACK
-	# 主机自己的 peer_id 通常是 1
-	_peer.peer_connected.connect(_on_peer_connected)
-	_peer.peer_disconnected.connect(_on_peer_disconnected)
 	Log.i("NetworkManager: 主机已创建 port=%d" % port)
 	hosted.emit()
 	return true
@@ -101,8 +108,6 @@ func join_game(ip: String, port: int) -> bool:
 	_state = State.CONNECTING
 	_is_host = false
 	local_color = Const.WHITE
-	_peer.peer_connected.connect(_on_peer_connected)
-	_peer.peer_disconnected.connect(_on_peer_disconnected)
 	Log.i("NetworkManager: 正在连接 %s:%d" % [ip, port])
 	return true
 
@@ -125,18 +130,28 @@ func close() -> void:
 func remote_peer_id() -> int:
 	return _remote_peer_id
 
+# 设置对端 peer id（供测试或扩展用）
+func set_remote_peer_id(pid: int) -> void:
+	if pid > 0:
+		_remote_peer_id = pid
+		if _state == State.HOSTING:
+			_state = State.ONLINE
+		Log.i("NetworkManager: 对端已加入 peer_id=%d" % pid)
+		player_joined.emit(pid)
+
+# 主机：ENet 对端连接信号 → 检测客户端加入（权威主机模型的核心）
 func _on_peer_connected(peer_id: int) -> void:
-	# 主机侧：第一个连接的客户端即对手
-	# 客户端侧：连接成功后，主机 peer_id 通常是 1
-	_remote_peer_id = peer_id
-	if _state == State.HOSTING:
-		_state = State.ONLINE
-	Log.i("NetworkManager: 对端已连接 peer_id=%d" % peer_id)
-	peer_connected.emit(peer_id)
+	if _is_host and (_state == State.HOSTING or _state == State.ONLINE):
+		_remote_peer_id = peer_id
+		if _state == State.HOSTING:
+			_state = State.ONLINE
+		Log.i("NetworkManager: [ENet] 对端已加入 peer_id=%d" % peer_id)
+		player_joined.emit(peer_id)
 
 func _on_peer_disconnected(peer_id: int) -> void:
-	Log.i("NetworkManager: 对端断开 peer_id=%d" % peer_id)
-	peer_disconnected.emit(peer_id)
-	# 对端断开视为掉线，回到离线（不自动关闭，便于上层决定是否重连）
-	_remote_peer_id = 0
-	_state = State.OFFLINE
+	if _remote_peer_id == peer_id:
+		Log.i("NetworkManager: [ENet] 对端断开 peer_id=%d" % peer_id)
+		_remote_peer_id = 0
+		if _state == State.ONLINE:
+			_state = State.HOSTING if _is_host else State.OFFLINE
+		player_disconnected.emit(peer_id)

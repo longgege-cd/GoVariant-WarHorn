@@ -45,6 +45,7 @@ const KOMI_MIN: float = 0.0       # 最小贴目
 const KOMI_MAX: float = 20.5      # 最大贴目（上限保险）
 # 兵力上限选项（默认 112）
 const PIECE_ENTRIES := [90, 112, 134, 152]
+const DEFAULT_PIECE_IDX: int = 1  # 默认兵力索引（PIECE_ENTRIES[1] = 112）
 
 var _selected_idx: int = 0
 var _selected_time_idx: int = 0  # 思考时间选项索引

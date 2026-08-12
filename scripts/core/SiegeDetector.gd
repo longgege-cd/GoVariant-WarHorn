@@ -134,108 +134,144 @@ static func count_legal_empty_points(board: BoardModel, group: Dictionary, early
 #     提吃后仍无气 → 禁入点 ❌
 #   不能提吃 → 禁入点 ❌
 # 关键原则：对方的眼位是禁入点，自己的眼位是可落子空点
+# 性能优化：不 clone 全棋盘，仅局部模拟（四邻组群气数 + 候选空点判定）
 static func _is_legal_move(board: BoardModel, row: int, col: int, color: int) -> bool:
+	var sim: Dictionary = _simulate_place(board, row, col, color)
+	return sim.own_alive
+
+# 局部模拟在 (row,col) 落 color 子（前提：该点为空），不修改棋盘
+# 返回 { "captures": Array[Vector2i], "own_alive": bool }
+# captures: 被提吃的对方组群棋子；own_alive: 落子后己方连通块是否有气
+static func _simulate_place(board: BoardModel, row: int, col: int, color: int) -> Dictionary:
 	var opp: int = Const.opponent(color)
-	# 快速检查：落子点有空邻居 → 落子后有气 → 可落子（无需clone）
+	var size: int = board.size
+	# 快速路径：落子点有空邻居 → 落子后有气（无需模拟提吃）
 	for n in board.neighbors(row, col):
 		if board.get_at(n[0], n[1]) == Const.EMPTY:
-			return true
-	# 无直接空邻居：clone棋盘模拟落子
-	var test := board.clone()
-	test.set_at(row, col, color)
-	# 步骤1：检查落子后己方连通块是否有气（含通过连接己方组群获得气）
-	var own_g: Dictionary = test.group_at(row, col)
-	var own_libs: Array = test.liberties(own_g.stones)
-	if not own_libs.is_empty():
-		return true  # 有气 → 可落子
-	# 步骤2：无气 → 检查能否提吃相邻对方棋子
+			return { "captures": [], "own_alive": true }
+	var own_seen: Dictionary = {}   # idx -> true（邻接己方组群成员）
+	var opp_seen: Dictionary = {}   # idx -> true（邻接对方组群成员）
 	var captured: Array = []
-	for n in test.neighbors(row, col):
-		if test.get_at(n[0], n[1]) != opp:
-			continue
-		var g: Dictionary = test.group_at(n[0], n[1])
-		var glibs: Array = test.liberties(g.stones)
-		if glibs.is_empty():
+	for n in board.neighbors(row, col):
+		var nv: int = board.get_at(n[0], n[1])
+		var nidx: int = n[0] * size + n[1]
+		if nv == opp:
+			if opp_seen.has(nidx):
+				continue
+			var g: Dictionary = board.group_at(n[0], n[1])
 			for s in g.stones:
-				captured.append(s)
-	if captured.is_empty():
-		return false  # 不能提吃 → 禁入点
-	# 模拟提吃后重新检查己方是否有气（规则6.5步骤2）
-	for s in captured:
-		test.set_at(s.y, s.x, Const.EMPTY)
-	var own_g2: Dictionary = test.group_at(row, col)
-	var own_libs2: Array = test.liberties(own_g2.stones)
-	return not own_libs2.is_empty()
+				opp_seen[s.y * size + s.x] = true
+			# 落子点原为空点且邻接该组群 → 必是其气之一；落子后该气消失
+			# 排除落子点后无气 → 被提
+			if _group_liberty_count_excluding(board, g, row, col) == 0:
+				for s in g.stones:
+					captured.append(Vector2i(s.x, s.y))
+		elif nv == color:
+			if own_seen.has(nidx):
+				continue
+			var g: Dictionary = board.group_at(n[0], n[1])
+			for s in g.stones:
+				own_seen[s.y * size + s.x] = true
+	if not captured.is_empty() or not own_seen.is_empty():
+		# 有提吃或连接己方 → 重新判定己方连通块是否有气
+		return { "captures": captured, "own_alive": _connected_has_liberty(board, row, col, color, own_seen, captured) }
+	return { "captures": [], "own_alive": false }
+
+# 提吃/连接后的己方连通块（落子点 + 邻接己方组群 + 被提组群）是否有气
+# 候选气点 = 连通块成员的四邻；落子后棋盘上为空 ⇔ 原为空点(≠落子点) 或 被提位置
+static func _connected_has_liberty(board: BoardModel, row: int, col: int, color: int, own_seen: Dictionary, captured: Array) -> bool:
+	var size: int = board.size
+	var place_idx: int = row * size + col
+	var captured_set: Dictionary = {}
+	for cap in captured:
+		captured_set[cap.y * size + cap.x] = true
+	var candidates: Dictionary = {}  # idx -> 原值
+	for n in board.neighbors(row, col):
+		var ni: int = n[0] * size + n[1]
+		if not candidates.has(ni):
+			candidates[ni] = board.get_at(n[0], n[1])
+	for idx in own_seen:
+		var r: int = idx / size
+		var c: int = idx % size
+		for n in board.neighbors(r, c):
+			var ni: int = n[0] * size + n[1]
+			if not candidates.has(ni):
+				candidates[ni] = board.get_at(n[0], n[1])
+	for cap in captured:
+		for n in board.neighbors(cap.y, cap.x):
+			var ni: int = n[0] * size + n[1]
+			if not candidates.has(ni):
+				candidates[ni] = board.get_at(n[0], n[1])
+	for idx in candidates:
+		if idx == place_idx:
+			continue  # 落子点被己方子占据，不算气
+		var v: int = candidates[idx]
+		if v == Const.EMPTY or captured_set.has(idx):
+			return true
+	return false
+
+# 组群气数（排除落子点；该点原为空点，落子后不再计气）
+static func _group_liberty_count_excluding(board: BoardModel, g: Dictionary, row: int, col: int) -> int:
+	var size: int = board.size
+	var excl_idx: int = row * size + col
+	var seen: Dictionary = {}
+	var count: int = 0
+	for s in g.stones:
+		for n in board.neighbors(s.y, s.x):
+			var ni: int = n[0] * size + n[1]
+			if ni == excl_idx:
+				continue
+			if board.get_at(n[0], n[1]) == Const.EMPTY and not seen.has(ni):
+				seen[ni] = true
+				count += 1
+	return count
 
 # 检查组群是否被对方包围（v5.3纯几何判定）
 # 规则6.3条件1："被包围：处于对方的封闭包围圈内（纯几何判定）"
-# 算法：从棋盘边缘出发flooding（穿过空点+己方棋子，仅被对方棋子阻挡）
-#   若flooding能到达组群的气域 → 与外部连通 → 不被包围
-#   若flooding无法到达气域 → 被对方棋子完全封闭 → 被包围
+# 算法：组群气域 R 出发 flooding（穿过空点+己方棋子，仅被对方棋子阻挡）
+#   若 R 到达棋盘边缘空点 → 与外部连通 → 不被包围
+#   若 R 无法到达边缘空点 → 被对方棋子完全封闭 → 被包围
 # 这正确处理：
-#   - 大气域（覆盖大部分棋盘）→ flooding从边缘可达 → 不被包围
-#   - 包围圈内组群 → flooding被对方棋子阻挡 → 被包围
-#   - 角落组群被对方包围 → 边缘无空点或被对方棋子封死 → 被包围
-#   - 通过己方棋子链连接到外部 → flooding穿过己方棋子可达 → 不被包围
+#   - 大气域（覆盖大部分棋盘）→ R 触及边缘 → 不被包围
+#   - 包围圈内组群 → R 被对方棋子封闭 → 被包围
+#   - 角落组群被对方包围 → R 无路径到边缘空点 → 被包围
+#   - 通过己方棋子链连接到外部 → flooding 穿过己方棋子可达 → 不被包围
+# 性能优化：从组群气域反向 flooding 比从棋盘边缘正向 flooding 局部性好
+#   （未被包围组群气域大，很快触及边缘提前返回；被包围组群只遍历封闭小区域）
 static func _is_surrounded_by_opponent(board: BoardModel, group: Dictionary) -> bool:
 	var stones: Array = group.stones
 	var color: int = group.color
 	var opp: int = Const.opponent(color)
 	var size: int = board.size
 
-	var libs: Array = board.liberties(stones)
-	if libs.is_empty():
-		return true  # 没有气，被包围
-
-	# 气域 R：从组群所有气出发，洪水填充空连通块
-	var region: Dictionary = {}
+	# 气域/连通域：从组群棋子出发，穿过空点+己方棋子，被对方棋子阻挡
+	# 起点 = 组群棋子的非对方邻居（空点或己方棋子）
+	var region: Dictionary = {}  # idx -> true（己方棋子+空点，与对方隔绝的区域）
 	var stack: Array = []
-	for l in libs:
-		stack.append([l.y, l.x])
+	for s in stones:
+		for n in board.neighbors(s.y, s.x):
+			var v: int = board.get_at(n[0], n[1])
+			if v == opp:
+				continue
+			var idx: int = n[0] * size + n[1]
+			if not region.has(idx):
+				region[idx] = true
+				stack.append([n[0], n[1], v])
 	while stack.size() > 0:
 		var p = stack.pop_back()
-		var idx: int = p[0] * size + p[1]
-		if region.has(idx):
-			continue
-		if board.get_at(p[0], p[1]) != Const.EMPTY:
-			continue
-		region[idx] = true
+		if p[2] == Const.EMPTY:
+			# 空点到达棋盘边缘 → 与外部连通 → 不被包围
+			if p[0] == 0 or p[0] == size - 1 or p[1] == 0 or p[1] == size - 1:
+				return false
+		# 穿过空点和己方棋子继续扩散（仅被对方棋子阻挡）
 		for n in board.neighbors(p[0], p[1]):
+			var v: int = board.get_at(n[0], n[1])
+			if v == opp:
+				continue
 			var ni: int = n[0] * size + n[1]
-			if board.get_at(n[0], n[1]) == Const.EMPTY and not region.has(ni):
-				stack.append(n)
-
-	# 从棋盘边缘的空点出发flooding（穿过空点+己方棋子，仅被对方棋子阻挡）
-	# 注意：起始点必须是边缘空点，不是边缘己方棋子
-	# 这样角落组群（边缘全是己方棋子）被对方包围时，flooding无法出发→被包围
-	var outside: Dictionary = {}
-	var flood_stack: Array = []
-	for c in range(size):
-		for r in [0, size - 1]:
-			if board.get_at(r, c) == Const.EMPTY:
-				flood_stack.append([r, c])
-	for r in range(size):
-		for c in [0, size - 1]:
-			if board.get_at(r, c) == Const.EMPTY:
-				flood_stack.append([r, c])
-	while flood_stack.size() > 0:
-		var p = flood_stack.pop_back()
-		var idx: int = p[0] * size + p[1]
-		if outside.has(idx):
-			continue
-		var v: int = board.get_at(p[0], p[1])
-		if v == opp:
-			continue  # 对方棋子阻挡
-		outside[idx] = true
-		# 到达气域 → 与外部连通 → 不被包围
-		if region.has(idx):
-			return false
-		# 穿过空点和己方棋子
-		for n in board.neighbors(p[0], p[1]):
-			var ni: int = n[0] * size + n[1]
-			if not outside.has(ni) and board.get_at(n[0], n[1]) != opp:
-				flood_stack.append(n)
-
+			if not region.has(ni):
+				region[ni] = true
+				stack.append([n[0], n[1], v])
 	# 气域与外部不连通 → 被对方棋子完全封闭
 	return true
 
@@ -257,13 +293,9 @@ static func _is_true_eye(board: BoardModel, row: int, col: int, group_set: Dicti
 		return false
 	# 条件3：该组不能通过放弃该眼提吃对方棋子（倒扑判定）
 	# 若填眼可提吃对方 → 该点既是眼也是提子点 → 非独立真眼
-	var test := board.clone()
-	test.set_at(row, col, color)
-	for n in test.neighbors(row, col):
-		if test.get_at(n[0], n[1]) == opp:
-			var g: Dictionary = test.group_at(n[0], n[1])
-			if test.liberties(g.stones).is_empty():
-				return false  # 填眼可提吃对方 → 非独立真眼
+	var sim: Dictionary = _simulate_place(board, row, col, color)
+	if not sim.captures.is_empty():
+		return false  # 填眼可提吃对方 → 非独立真眼
 	return true
 
 # 将气域 R 拆分为「仅被该组包围」的眼空间

@@ -51,15 +51,43 @@ static func all_empty_regions(board: BoardModel) -> Array:
 				var c: int = cur % size
 				if r == 0 or r == size - 1 or c == 0 or c == size - 1:
 					touches_edge = true
-				for n in board.neighbors(r, c):
-					var ni: int = n[0] * size + n[1]
-					var v: int = board.get_at(n[0], n[1])
-					if v == Const.EMPTY:
-						if not visited.has(ni):
-							stack.append(ni)
+				# 内联 4 方向邻居（避免 neighbors() 每次建数组）
+				if r > 0:
+					var ni0: int = cur - size
+					var v0: int = board.grid[ni0]
+					if v0 == Const.EMPTY:
+						if not visited.has(ni0):
+							stack.append(ni0)
 					else:
-						border_colors[v] = border_colors.get(v, 0) + 1
-						border_stones[ni] = true
+						border_colors[v0] = border_colors.get(v0, 0) + 1
+						border_stones[ni0] = true
+				if r < size - 1:
+					var ni1: int = cur + size
+					var v1: int = board.grid[ni1]
+					if v1 == Const.EMPTY:
+						if not visited.has(ni1):
+							stack.append(ni1)
+					else:
+						border_colors[v1] = border_colors.get(v1, 0) + 1
+						border_stones[ni1] = true
+				if c > 0:
+					var ni2: int = cur - 1
+					var v2: int = board.grid[ni2]
+					if v2 == Const.EMPTY:
+						if not visited.has(ni2):
+							stack.append(ni2)
+					else:
+						border_colors[v2] = border_colors.get(v2, 0) + 1
+						border_stones[ni2] = true
+				if c < size - 1:
+					var ni3: int = cur + 1
+					var v3: int = board.grid[ni3]
+					if v3 == Const.EMPTY:
+						if not visited.has(ni3):
+							stack.append(ni3)
+					else:
+						border_colors[v3] = border_colors.get(v3, 0) + 1
+						border_stones[ni3] = true
 			# 转坐标
 			var pts: Array = []
 			for cidx in comp:
@@ -203,10 +231,25 @@ static func _compute_outside(board: BoardModel, wall: Dictionary) -> Dictionary:
 				visited[pi] = true
 				if p[0] == 0 or p[0] == size - 1 or p[1] == 0 or p[1] == size - 1:
 					edge_count += 1
-				for n in board.neighbors(p[0], p[1]):
-					var ni: int = n[0] * size + n[1]
-					if not component.has(ni) and not wall.has(ni):
-						stack.append(n)
+				# 内联 4 方向邻居（避免 neighbors() 每次建数组）
+				var pr: int = p[0]
+				var pc: int = p[1]
+				if pr > 0:
+					var ni0: int = pi - size
+					if not component.has(ni0) and not wall.has(ni0):
+						stack.append([pr - 1, pc])
+				if pr < size - 1:
+					var ni1: int = pi + size
+					if not component.has(ni1) and not wall.has(ni1):
+						stack.append([pr + 1, pc])
+				if pc > 0:
+					var ni2: int = pi - 1
+					if not component.has(ni2) and not wall.has(ni2):
+						stack.append([pr, pc - 1])
+				if pc < size - 1:
+					var ni3: int = pi + 1
+					if not component.has(ni3) and not wall.has(ni3):
+						stack.append([pr, pc + 1])
 			# 跟踪含最多边缘点的分量
 			if edge_count > best_edge_count:
 				best_edge_count = edge_count

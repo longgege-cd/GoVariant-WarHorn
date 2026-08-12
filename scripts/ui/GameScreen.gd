@@ -44,18 +44,26 @@ var _prev_sieged_stones: Dictionary = {}  # 上次被围困棋子索引集合 {i
 # 计时器系统
 var _timer: TimerSystem = null
 var _time_setting: Dictionary = {}  # 思考时间配置（从 StartMenu 传入）
+# 房间模式：对话框实例引用
+var _room_host_dlg: AcceptDialog = null  # 主机房间设置对话框
+var _room_list_dlg: AcceptDialog = null  # 客户端房间列表对话框
+var _room_wait_dlg: AcceptDialog = null  # 主机等待对手对话框
+# 联机/PvE 状态提示条（在棋盘与控制面板之间显示）
+var _status_label: Label = null
 
 func _ready() -> void:
 	_ensure_avatar_dir()
 	_layout()
 	_new_game()
-	# 联机信号
-	NetworkManager.peer_connected.connect(_on_net_peer_connected)
-	NetworkManager.peer_disconnected.connect(_on_net_peer_disconnected)
+	# 联机信号（权威主机模型）
+	NetworkManager.player_joined.connect(_on_net_peer_joined)
+	NetworkManager.player_disconnected.connect(_on_net_peer_disconnected)
 	NetworkManager.connection_failed.connect(_on_net_failed)
 	NetworkManager.closed.connect(_on_net_closed)
 	NetSync.new_game_requested.connect(_on_net_new_game_requested)
 	NetSync.sync_mismatch.connect(_on_net_sync_mismatch)
+	NetSync.game_started.connect(_on_net_game_started)
+	NetworkManager.joined.connect(_on_net_joined)
 
 # 创建玩家头像目录 user://avatars/，玩家可放 black.png / white.png 自定义头像
 func _ensure_avatar_dir() -> void:
@@ -85,6 +93,16 @@ func _exit_tree() -> void:
 		_ai_task = null
 	_ai = null
 	_ai_thinking = false
+	# 清理房间对话框
+	for dlg in [_room_host_dlg, _room_list_dlg, _room_wait_dlg]:
+		if dlg != null and is_instance_valid(dlg):
+			dlg.queue_free()
+	_room_host_dlg = null
+	_room_list_dlg = null
+	_room_wait_dlg = null
+	# 停止房间发现
+	RoomDiscovery.stop_broadcasting()
+	RoomDiscovery.stop_listening()
 
 func _layout() -> void:
 	# 主布局：水平三栏贴边 = [黑方得分板(贴左) | 中间棋盘区(撑满) | 白方得分板(贴右)]
@@ -117,6 +135,14 @@ func _layout() -> void:
 	board_view.size_flags_horizontal = SIZE_SHRINK_CENTER
 	board_view.size_flags_vertical = SIZE_SHRINK_CENTER
 	center.add_child(board_view)
+
+	# 状态提示条（联机/PvE 时显示）
+	_status_label = Label.new()
+	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status_label.add_theme_font_size_override("font_size", 13)
+	_status_label.add_theme_color_override("font_color", preload("res://scripts/ui/UITheme.gd").C_GOLD)
+	_status_label.visible = false
+	center.add_child(_status_label)
 
 	# 底部控制面板（精简：悔棋/虚手/设置）
 	control_panel = preload("res://scripts/ui/ControlPanel.gd").new()
@@ -211,8 +237,8 @@ func _on_pause_new_game() -> void:
 
 func _on_pause_back_to_main() -> void:
 	_on_pause_resume()
-	# 清理联机/PvE 状态
-	if _online_mode:
+	# 清理联机状态：即使 _online_mode=false，NetworkManager 可能仍 HOSTING（如对手断开后）
+	if _online_mode or not NetworkManager.is_offline():
 		stop_online()
 	if _pve_mode:
 		stop_pve()
@@ -221,25 +247,127 @@ func _on_pause_back_to_main() -> void:
 func _on_pause_quit() -> void:
 	get_tree().quit()
 
-# 联机按钮处理
+# 联机按钮处理：弹出联机入口菜单
 func _on_online_pressed() -> void:
 	var menu := preload("res://scripts/ui/NetworkMenu.gd").new()
 	add_child(menu)
-	menu.host_requested.connect(_on_online_host)
-	menu.join_requested.connect(_on_online_join)
+	menu.host_requested.connect(_on_online_host_entry)
+	menu.join_requested.connect(_on_online_join_entry)
 	menu.popup_centered()
 
 func _on_online_quit() -> void:
 	stop_online()
 	control_panel.update_online_state(false)
 
-func _on_online_host(port: int) -> void:
-	if start_online_host(port):
-		control_panel.update_online_state(true)
+# 玩家A选择「建立房间」→ 弹出房间设置对话框
+func _on_online_host_entry() -> void:
+	if _room_host_dlg != null:
+		return
+	# 等待 NetworkMenu 销毁，避免两个 AcceptDialog 争抢 exclusive child
+	await get_tree().process_frame
+	_room_host_dlg = preload("res://scripts/ui/RoomHostDialog.gd").new()
+	add_child(_room_host_dlg)
+	_room_host_dlg.room_created.connect(_on_room_created)
+	_room_host_dlg.canceled.connect(_on_room_host_canceled)
+	_room_host_dlg.popup_centered()
 
-func _on_online_join(ip: String, port: int) -> void:
+# 玩家A取消房间设置
+func _on_room_host_canceled() -> void:
+	if _room_host_dlg != null:
+		_room_host_dlg.queue_free()
+		_room_host_dlg = null
+
+# 玩家A确认建立房间 → 建主 + 启动广播 + 弹出等待对话框
+func _on_room_created(time_setting: Dictionary, piece_limit: int, komi: float) -> void:
+	var port: int = _room_host_dlg.get_port()
+	if _room_host_dlg != null:
+		_room_host_dlg.queue_free()
+		_room_host_dlg = null
+	# 保存房间设定
+	_time_setting = time_setting
+	_piece_limit = piece_limit
+	_komi = komi
+	if not start_online_host(port):
+		return
+	# 启动 UDP 广播房间信息
+	var room_info: Dictionary = {
+		"ip": _get_local_ip(),
+		"port": port,
+		"time_setting": time_setting,
+		"piece_limit": piece_limit,
+		"komi": komi,
+	}
+	RoomDiscovery.start_broadcasting(room_info)
+	if not RoomDiscovery.is_broadcasting():
+		# 广播失败（5006 端口被占用）：房间无法被其他玩家发现
+		_show_error("房间广播失败（端口 5006 可能被占用），对手可能搜索不到您的房间")
+	# 等待 RoomHostDialog 销毁，避免两个 AcceptDialog 争抢 exclusive child
+	await get_tree().process_frame
+	# 弹出等待对手对话框
+	_room_wait_dlg = preload("res://scripts/ui/RoomWaitDialog.gd").new()
+	add_child(_room_wait_dlg)
+	_room_wait_dlg.start_requested.connect(_on_room_start_requested)
+	_room_wait_dlg.canceled.connect(_on_room_wait_canceled)
+	_room_wait_dlg.popup_centered()
+	# 注：不在此处提前 set_peer_joined(true)，仅依赖 peer_joined 信号驱动状态
+	_show_status("已创建房间（端口 %d），等待对手加入…" % port)
+
+# 玩家B选择「加入房间」→ 弹出房间列表对话框
+func _on_online_join_entry() -> void:
+	if _room_list_dlg != null:
+		return
+	# 等待 NetworkMenu 销毁，避免两个 AcceptDialog 争抢 exclusive child
+	await get_tree().process_frame
+	_room_list_dlg = preload("res://scripts/ui/RoomListDialog.gd").new()
+	add_child(_room_list_dlg)
+	_room_list_dlg.join_confirmed.connect(_on_room_join_confirmed)
+	_room_list_dlg.canceled.connect(_on_room_list_canceled)
+	_room_list_dlg.popup_centered()
+
+# 玩家B取消房间列表
+func _on_room_list_canceled() -> void:
+	if _room_list_dlg != null:
+		_room_list_dlg.queue_free()
+		_room_list_dlg = null
+
+# 玩家B选择房间加入 → ENet 连接主机
+func _on_room_join_confirmed(ip: String, port: int) -> void:
+	if _room_list_dlg != null:
+		_room_list_dlg.queue_free()
+		_room_list_dlg = null
 	if start_online_client(ip, port):
 		control_panel.update_online_state(true)
+		_show_status("已连接 %s:%d，等待主机开始游戏…" % [ip, port])
+
+# 主机点「开始游戏」→ 推送配置给客户端 + 双方开始对局
+func _on_room_start_requested() -> void:
+	if _room_wait_dlg != null:
+		_room_wait_dlg.queue_free()
+		_room_wait_dlg = null
+	RoomDiscovery.stop_broadcasting()
+	NetSync.host_start_game(_time_setting, _piece_limit, _komi, _special_enabled)
+	_new_game()
+	_reinit_timer()
+	_show_status("对局开始 · 您执黑方 · 第 1 手")
+
+# 主机取消等待 → 关闭房间
+func _on_room_wait_canceled() -> void:
+	if _room_wait_dlg != null:
+		_room_wait_dlg.queue_free()
+		_room_wait_dlg = null
+	RoomDiscovery.stop_broadcasting()
+	stop_online()
+	_show_status("已取消房间")
+
+# 客户端收到主机「开始游戏」RPC → 应用配置 + 开始对局
+func _on_net_game_started(time_setting: Dictionary, piece_limit: int, komi: float, special_enabled: bool) -> void:
+	_time_setting = time_setting
+	_piece_limit = piece_limit
+	_komi = komi
+	_special_enabled = special_enabled
+	_new_game()
+	_reinit_timer()
+	_show_status("对局开始 · 您执白方 · 第 1 手")
 
 # 模式选择处理
 func _on_mode_selected(mode: String, difficulty: int) -> void:
@@ -354,6 +482,8 @@ func _on_new_game() -> void:
 		_new_game()
 
 func _on_pass() -> void:
+	if session == null:
+		return
 	if _online_mode:
 		# 联机：仅本地玩家轮次可操作，通过 NetSync 路由
 		if session.to_move != NetworkManager.local_color:
@@ -368,6 +498,8 @@ func _on_pass() -> void:
 		_show_error(out.reason)
 
 func _on_resign() -> void:
+	if session == null:
+		return
 	if _online_mode:
 		# 联机认输：通知对端
 		NetSync.local_resign()
@@ -383,6 +515,8 @@ func _on_resign() -> void:
 	_update_controls()
 
 func _on_deploy_button() -> void:
+	if session == null:
+		return
 	if _online_mode and session.to_move != NetworkManager.local_color:
 		_show_error("非您的回合")
 		return
@@ -468,7 +602,10 @@ func _on_cycle_theme() -> void:
 	ThemeManager.cycle_next()
 
 func _on_cell_clicked(row: int, col: int) -> void:
-	if session.game_over:
+	if session == null or session.game_over:
+		return
+	# 联机等待期间（对端未加入）禁止操作
+	if _online_mode and NetworkManager.is_online() and NetworkManager.remote_peer_id() == 0:
 		return
 	# PvE 模式：AI 思考中或非玩家回合时禁止操作
 	if _pve_mode and (_ai_thinking or session.to_move != Const.BLACK):
@@ -938,13 +1075,30 @@ func _update_status() -> void:
 	# 文字状态栏已移除，行棋方由得分板高亮指示
 	pass
 
-func _show_status(_msg: String) -> void:
-	pass
+func _show_status(msg: String) -> void:
+	# 联机/PvE 状态提示条（正常对局隐藏，联机流程/报错时显示）
+	if _status_label == null:
+		return
+	if msg.is_empty():
+		_status_label.visible = false
+		return
+	_status_label.text = msg
+	_status_label.visible = true
+	# 10 秒后自动隐藏
+	var lbl := _status_label
+	await get_tree().create_timer(10.0).timeout
+	if is_instance_valid(lbl) and lbl.text == msg:
+		lbl.visible = false
 
-func _show_error(_msg: String) -> void:
+func _show_error(msg: String) -> void:
 	# 棋盘边框红色闪烁反馈
 	if board_view != null:
 		board_view.flash_error()
+	# 状态条红色文字提示
+	if _status_label != null:
+		_status_label.text = msg
+		_status_label.visible = true
+		_status_label.add_theme_color_override("font_color", Color(0.95, 0.4, 0.35))
 
 func _update_controls() -> void:
 	control_panel.update_state(session, _deploy_mode)
@@ -989,7 +1143,7 @@ func start_online_host(port: int) -> bool:
 		return false
 	_online_mode = true
 	# 主机执黑，等待客户端加入
-	_new_game()
+	# 注意：不在此处 _new_game()，避免计时器启动；待主机点"开始游戏"后再开局
 	_show_status("已建主（端口 %d），等待对手加入…" % port)
 	return true
 
@@ -1010,26 +1164,81 @@ func stop_online() -> void:
 	_online_mode = false
 	NetSync.active = false
 	NetSync.session = null
+	RoomDiscovery.stop_broadcasting()
+	RoomDiscovery.stop_listening()
 	NetworkManager.close()
 	_new_game()
 	_show_status("已退出联机模式")
+
+# 获取本机局域网 IP（用于 UDP 广播房间信息）
+# 过滤回环(127.*)、IPv6、链路本地 APIPA(169.254.*，如蓝牙/虚拟网卡)，
+# 优先返回可路由的 IPv4 局域网地址（如 192.168.x.x）
+func _get_local_ip() -> String:
+	var fallback: String = "127.0.0.1"
+	for addr in IP.get_local_addresses():
+		var s: String = str(addr)
+		# 过滤回环、IPv6
+		if s.begins_with("127.") or s.begins_with(":") or s.find(":") >= 0:
+			continue
+		# 过滤链路本地 APIPA 地址（DHCP 失败/蓝牙/虚拟网卡）
+		if s.begins_with("169.254."):
+			if fallback == "127.0.0.1":
+				fallback = s  # 无其他可用 IP 时兜底用链路本地
+			continue
+		return s
+	return fallback
 
 func _stop_pve_and_ai() -> void:
 	if _pve_mode:
 		stop_pve()
 
-# 联机信号处理
-func _on_net_peer_connected(peer_id: int) -> void:
-	# 对手已连接，开始对局
-	_new_game()
-	var my_str: String = "黑方(主机)" if NetworkManager.is_host() else "白方(客户端)"
-	_show_status("对手已加入！您执%s · 第 1 手" % my_str)
+# 主机收到对端加入信号（ENet peer_connected 驱动）→ 更新等待对话框
+func _on_net_peer_joined(_peer_id: int) -> void:
+	if NetworkManager.is_host():
+		if _room_wait_dlg != null and _room_wait_dlg.has_method("set_peer_joined"):
+			_room_wait_dlg.set_peer_joined(true)
+		_show_status("对手已加入，点击「开始游戏」开始对局")
+
+# 客户端连接成功 → 等待主机开始游戏
+func _on_net_joined() -> void:
+	if not NetworkManager.is_host():
+		_show_status("已连接主机，等待主机开始游戏…")
 
 func _on_net_peer_disconnected(_peer_id: int) -> void:
-	_show_status("对手已断开连接")
-	_online_mode = false
-	NetSync.active = false
-	control_panel.update_online_state(false)
+	if NetworkManager.is_host():
+		# 主机：保持 _online_mode=true，NetworkManager 回到 HOSTING 等待新对手
+		NetSync.active = false
+		# 结束当前对局（若进行中）
+		if session != null and not session.game_over:
+			session.game_over = true
+			var result: Dictionary = session.final_result("对手断开")
+			result["winner"] = ""  # 无胜负，异常终止
+			result["reason"] = "对手断开连接"
+			session.game_ended.emit(result)
+		# 重新弹出等待对话框（若已被销毁）
+		if _room_wait_dlg == null:
+			_room_wait_dlg = preload("res://scripts/ui/RoomWaitDialog.gd").new()
+			add_child(_room_wait_dlg)
+			_room_wait_dlg.start_requested.connect(_on_room_start_requested)
+			_room_wait_dlg.canceled.connect(_on_room_wait_canceled)
+			_room_wait_dlg.popup_centered()
+		else:
+			# 对话框仍存在，重置为"等待对手"状态
+			if _room_wait_dlg.has_method("set_peer_joined"):
+				_room_wait_dlg.set_peer_joined(false)
+		_show_status("对手已断开，等待新对手加入…")
+	else:
+		# 客户端：主机断开 → 彻底退出联机
+		_show_status("主机已断开连接")
+		_online_mode = false
+		NetSync.active = false
+		control_panel.update_online_state(false)
+		if session != null and not session.game_over:
+			session.game_over = true
+			var result: Dictionary = session.final_result("主机断开")
+			result["winner"] = ""
+			result["reason"] = "主机断开连接"
+			session.game_ended.emit(result)
 
 func _on_net_failed() -> void:
 	_show_status("连接失败")
@@ -1045,7 +1254,7 @@ func _on_net_closed() -> void:
 		control_panel.update_online_state(false)
 
 func _on_net_new_game_requested(komi: float, special_enabled: bool, piece_limit: int = Const.PIECE_LIMIT) -> void:
-	# 客户端收到主机的新对局配置
+	# 客户端收到主机的新对局配置（再战场景）
 	_special_enabled = special_enabled
 	_komi = komi
 	_piece_limit = piece_limit
@@ -1067,6 +1276,10 @@ func setup_game(mode: String, difficulty: int, time_setting: Dictionary = {}, op
 		_komi = options.komi
 	if options.has("piece_limit"):
 		_piece_limit = options.piece_limit
+	# 联机模式：房间设定由 NetworkMenu 选定，不沿用 StartMenu 传入的设定
+	# 此处重置为默认值，待主机建主时由 _on_online_host 重新赋值
+	if mode == "online":
+		_time_setting = {"main": -1.0, "byoyomi": 0, "byoyomi_duration": 0.0}
 	# 用真实配置重置计时器（覆盖 _ready 中默认的无限时间）
 	_reinit_timer()
 	# 重建 session 以应用新的 komi/piece_limit（_ready 中的 _new_game 用了默认值）
@@ -1075,7 +1288,7 @@ func setup_game(mode: String, difficulty: int, time_setting: Dictionary = {}, op
 		"pve":
 			start_pve(difficulty)
 		"online":
-			# 联机模式：自动打开联机菜单供玩家选择主机/加入
+			# 联机模式：自动打开联机菜单供玩家选择创建房间/加入房间
 			call_deferred("_on_online_pressed")
 		_:
 			# 本地双人模式，无需额外设置

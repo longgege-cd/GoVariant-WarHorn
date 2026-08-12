@@ -10,6 +10,7 @@ extends Control
 
 signal start_requested(mode: String, difficulty: int, time_setting: Dictionary, options: Dictionary)
 signal replay_requested
+signal tutorial_requested
 signal theme_cycle_requested
 signal quit_requested
 
@@ -232,6 +233,10 @@ func _build_ui() -> void:
 	var replay_btn := _make_text_button("棋 谱 回 放", false)
 	replay_btn.pressed.connect(func(): replay_requested.emit())
 	_bottom_row.add_child(replay_btn)
+
+	var tutorial_btn := _make_text_button("规 则 教 程", false)
+	tutorial_btn.pressed.connect(func(): tutorial_requested.emit())
+	_bottom_row.add_child(tutorial_btn)
 
 	var quit_btn := _make_text_button("退出", true)
 	quit_btn.pressed.connect(func(): quit_requested.emit())

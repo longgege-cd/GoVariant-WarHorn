@@ -48,7 +48,7 @@ func _build() -> void:
 	_glow_layer = Control.new()
 	_glow_layer.set_anchors_preset(PRESET_FULL_RECT)
 	_glow_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_glow_layer.draw.connect(_draw_glow.bind(winner_color))
+	_glow_layer.draw.connect(_draw_glow.bind(_glow_layer, winner_color))
 	add_child(_glow_layer)
 
 	# 居中容器
@@ -88,7 +88,7 @@ func _build() -> void:
 	# 胜方棋色圆
 	_winner_circle = Control.new()
 	_winner_circle.custom_minimum_size = Vector2(32, 32)
-	_winner_circle.draw.connect(_draw_winner_circle.bind(winner_color))
+	_winner_circle.draw.connect(_draw_winner_circle.bind(_winner_circle, winner_color))
 	title_row.add_child(_winner_circle)
 
 	_winner_label = Label.new()
@@ -115,7 +115,7 @@ func _build() -> void:
 	# 分数对比视图
 	_score_view = Control.new()
 	_score_view.custom_minimum_size = Vector2(0, 90)
-	_score_view.draw.connect(_draw_score_comparison)
+	_score_view.draw.connect(_draw_score_comparison.bind(_score_view))
 	vbox.add_child(_score_view)
 
 	# 按钮行
@@ -152,39 +152,39 @@ func _build() -> void:
 
 var _glow_layer: Control = null
 
-# 绘制胜方金色光晕
-func _draw_glow(winner_color: int) -> void:
+# 绘制胜方金色光晕（v: 触发绘制的节点 = _glow_layer）
+func _draw_glow(v: Control, winner_color: int) -> void:
 	if winner_color < 0:
 		return
-	var center_pos: Vector2 = size * 0.5
-	var max_r: float = max(size.x, size.y) * 0.7
+	var center_pos: Vector2 = v.size * 0.5
+	var max_r: float = max(v.size.x, v.size.y) * 0.7
 	var glow_color: Color = Color(1.0, 0.85, 0.3, 0.15)
 	# 多层径向渐变（用同心圆模拟）
 	for i in 8:
 		var r: float = max_r * (1.0 - i / 8.0)
 		var a: float = 0.04 * (1.0 - i / 8.0)
-		draw_arc(center_pos, r, 0, TAU, 48, Color(glow_color.r, glow_color.g, glow_color.b, a), 12.0)
+		v.draw_arc(center_pos, r, 0, TAU, 48, Color(glow_color.r, glow_color.g, glow_color.b, a), 12.0)
 
-# 绘制胜方棋色圆
-func _draw_winner_circle(winner_color: int) -> void:
-	var center_pos: Vector2 = _winner_circle.size * 0.5
-	var r: float = min(_winner_circle.size.x, _winner_circle.size.y) * 0.45
+# 绘制胜方棋色圆（v: 触发绘制的节点 = _winner_circle）
+func _draw_winner_circle(v: Control, winner_color: int) -> void:
+	var center_pos: Vector2 = v.size * 0.5
+	var r: float = min(v.size.x, v.size.y) * 0.45
 	if winner_color == Const.BLACK:
-		draw_circle(center_pos, r, Color(0.08, 0.08, 0.08, 1.0))
-		draw_arc(center_pos, r, 0, TAU, 32, UITheme.C_GOLD, 2.0)
+		v.draw_circle(center_pos, r, Color(0.08, 0.08, 0.08, 1.0))
+		v.draw_arc(center_pos, r, 0, TAU, 32, UITheme.C_GOLD, 2.0)
 	elif winner_color == Const.WHITE:
-		draw_circle(center_pos, r, Color(0.95, 0.95, 0.95, 1.0))
-		draw_arc(center_pos, r, 0, TAU, 32, UITheme.C_GOLD, 2.0)
+		v.draw_circle(center_pos, r, Color(0.95, 0.95, 0.95, 1.0))
+		v.draw_arc(center_pos, r, 0, TAU, 32, UITheme.C_GOLD, 2.0)
 	else:
 		# 和棋：金色空心圆
-		draw_arc(center_pos, r, 0, TAU, 32, UITheme.C_GOLD_DIM, 2.0)
+		v.draw_arc(center_pos, r, 0, TAU, 32, UITheme.C_GOLD_DIM, 2.0)
 
-# 绘制分数对比柱状条
-func _draw_score_comparison() -> void:
+# 绘制分数对比柱状条（v: 触发绘制的节点 = _score_view）
+func _draw_score_comparison(v: Control) -> void:
 	if _result.is_empty():
 		return
-	var w: float = _score_view.size.x
-	var h: float = _score_view.size.y
+	var w: float = v.size.x
+	var h: float = v.size.y
 	if w <= 0 or h <= 0:
 		return
 	# 提取分数
@@ -204,25 +204,25 @@ func _draw_score_comparison() -> void:
 	var white_y: float = h * 0.65
 	# 黑方条
 	var black_w: float = bar_w * (black_total / max_score) if black_total > 0 else 0
-	draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(bar_w, bar_h)), Color(0.15, 0.12, 0.08, 0.6), true)
+	v.draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(bar_w, bar_h)), Color(0.15, 0.12, 0.08, 0.6), true)
 	if black_w > 0:
-		draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(black_w, bar_h)), Color(0.2, 0.15, 0.05, 0.95), true)
-	draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(bar_w, bar_h)), UITheme.C_GOLD_DIM, false, 1.0)
+		v.draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(black_w, bar_h)), Color(0.2, 0.15, 0.05, 0.95), true)
+	v.draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(bar_w, bar_h)), UITheme.C_GOLD_DIM, false, 1.0)
 	# 黑方标签
-	draw_string(_default_font(), Vector2(bar_x - 4, black_y + bar_h * 0.75), "黑",
+	v.draw_string(_default_font(), Vector2(bar_x - 4, black_y + bar_h * 0.75), "黑",
 		HORIZONTAL_ALIGNMENT_RIGHT, -1, 14, UITheme.C_GOLD)
-	draw_string(_default_font(), Vector2(bar_x + bar_w + 8, black_y + bar_h * 0.75), "%.1f" % black_total,
+	v.draw_string(_default_font(), Vector2(bar_x + bar_w + 8, black_y + bar_h * 0.75), "%.1f" % black_total,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UITheme.C_GOLD)
 	# 白方条
 	var white_w: float = bar_w * (white_total / max_score) if white_total > 0 else 0
-	draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(bar_w, bar_h)), Color(0.15, 0.12, 0.08, 0.6), true)
+	v.draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(bar_w, bar_h)), Color(0.15, 0.12, 0.08, 0.6), true)
 	if white_w > 0:
-		draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(white_w, bar_h)), Color(0.85, 0.85, 0.85, 0.7), true)
-	draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(bar_w, bar_h)), UITheme.C_GOLD_DIM, false, 1.0)
+		v.draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(white_w, bar_h)), Color(0.85, 0.85, 0.85, 0.7), true)
+	v.draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(bar_w, bar_h)), UITheme.C_GOLD_DIM, false, 1.0)
 	# 白方标签
-	draw_string(_default_font(), Vector2(bar_x - 4, white_y + bar_h * 0.75), "白",
+	v.draw_string(_default_font(), Vector2(bar_x - 4, white_y + bar_h * 0.75), "白",
 		HORIZONTAL_ALIGNMENT_RIGHT, -1, 14, Color(0.9, 0.9, 0.9))
-	draw_string(_default_font(), Vector2(bar_x + bar_w + 8, white_y + bar_h * 0.75), "%.1f" % white_total,
+	v.draw_string(_default_font(), Vector2(bar_x + bar_w + 8, white_y + bar_h * 0.75), "%.1f" % white_total,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.9, 0.9, 0.9))
 
 func _default_font() -> Font:

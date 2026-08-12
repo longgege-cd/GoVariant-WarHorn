@@ -62,6 +62,9 @@ func _init() -> void:
 	var replay_tests := preload("res://tests/test_replay.gd").new()
 	replay_tests.run(t)
 
+	var tutorial_tests := preload("res://tests/test_tutorial.gd").new()
+	tutorial_tests.run(t)
+
 	# 汇总
 	_p("")
 	_p("========== 测试结果 ==========")

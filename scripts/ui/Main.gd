@@ -26,8 +26,20 @@ func _show_start_menu() -> void:
 	add_child(_start_menu)
 	_start_menu.start_requested.connect(_on_start_requested)
 	_start_menu.replay_requested.connect(_on_replay_requested)
+	_start_menu.tutorial_requested.connect(_show_tutorial_screen)
 	_start_menu.theme_cycle_requested.connect(_on_theme_cycle)
 	_start_menu.quit_requested.connect(_on_quit)
+
+func _show_tutorial_screen() -> void:
+	# 清理主菜单
+	if _start_menu != null:
+		_start_menu.queue_free()
+		_start_menu = null
+	# 创建规则教程界面
+	var tutorial_screen = preload("res://scripts/tutorial/TutorialScreen.gd").new()
+	tutorial_screen.set_anchors_preset(PRESET_FULL_RECT)
+	add_child(tutorial_screen)
+	tutorial_screen.back_to_main_menu_requested.connect(_show_start_menu)
 
 func _show_replay_screen() -> void:
 	# 清理主菜单

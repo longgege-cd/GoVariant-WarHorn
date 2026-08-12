@@ -248,6 +248,88 @@ func _run_tests() -> void:
 	menu.queue_free()
 	await get_tree().process_frame
 
+	# ===== 16. 教程模块：StartMenu 教程按钮 + TutorialScreen + TutorialLesson =====
+	menu = preload("res://scripts/ui/StartMenu.gd").new()
+	add_child(menu)
+	await get_tree().process_frame
+	t.expect(menu.tutorial_requested != null, "教程信号已声明")
+	var tut_emitted: Dictionary = {"v": false}
+	menu.tutorial_requested.connect(func(): tut_emitted["v"] = true)
+	var tut_btn: Button = null
+	for child in menu._bottom_row.get_children():
+		if child is Button and str(child.text).contains("教 程"):
+			tut_btn = child
+			break
+	t.expect(tut_btn != null, "主菜单含教程按钮")
+	if tut_btn != null:
+		tut_btn.pressed.emit()
+	t.expect(tut_emitted["v"], "点击教程按钮发出 tutorial_requested")
+	menu.queue_free()
+	await get_tree().process_frame
+
+	# TutorialScreen：构建关卡列表 + 打开关卡
+	var tscreen = preload("res://scripts/tutorial/TutorialScreen.gd").new()
+	add_child(tscreen)
+	await get_tree().process_frame
+	t.expect(tscreen._progress != null, "教程进度已加载")
+	t.expect(tscreen._lesson_btns.size() >= 14, "关卡列表覆盖 14 关")
+	t.expect(tscreen._lesson_btns[1].disabled, "第 2 关默认锁定")
+	t.expect(not tscreen._lesson_btns[0].disabled, "第 1 关默认解锁")
+	# 打开第 1 关 → 内部实例化 TutorialLesson
+	tscreen._open_lesson(0)
+	await get_tree().process_frame
+	tscreen.queue_free()
+	await get_tree().process_frame
+
+	# TutorialLesson 直接实例化（关卡0）且不报错
+	# 注意：教程完成会写 user:// 进度文件，先备份、结束后恢复
+	var prog_file: String = TutorialProgress.SAVE_PATH
+	var prog_backup: String = "user://tutorial_progress_ui.bak"
+	if FileAccess.file_exists(prog_file):
+		var pf := FileAccess.open(prog_file, FileAccess.READ)
+		if pf:
+			var pb := FileAccess.open(prog_backup, FileAccess.WRITE)
+			if pb:
+				pb.store_string(pf.get_as_text())
+				pb.close()
+			pf.close()
+
+	var lv = preload("res://scripts/tutorial/TutorialLesson.gd").new()
+	lv.configure(0, TutorialProgress.load_progress())
+	add_child(lv)
+	await get_tree().process_frame
+	t.expect(lv.session != null, "TutorialLesson session 已创建")
+	t.expect_eq(lv.lesson.get("id", ""), "1-1", "关卡 0 数据为 1-1")
+	# 1-1 区域点击：点黑土区域 → 步骤推进
+	lv._handle_zone_click(0, 0)
+	t.expect_eq(lv._zone_step, 1, "1-1 黑土区域点击推进")
+	lv.queue_free()
+	await get_tree().process_frame
+
+	# 自由落子：关卡1(1-2 place) 在提示点落子 → 完成关卡
+	lv = preload("res://scripts/tutorial/TutorialLesson.gd").new()
+	lv.configure(1, TutorialProgress.load_progress())
+	add_child(lv)
+	await get_tree().process_frame
+	t.expect_eq(lv.lesson.get("id", ""), "1-2", "关卡 1 数据为 1-2")
+	lv._on_board_clicked(9, 8)
+	t.expect(lv.session.ply > 0, "教程棋盘自由落子生效")
+	t.expect(lv._completed, "1-2 落一手完成关卡")
+	lv.queue_free()
+	await get_tree().process_frame
+
+	# 恢复真实进度
+	TutorialProgress.reset_progress()
+	if FileAccess.file_exists(prog_backup):
+		var pf2 := FileAccess.open(prog_backup, FileAccess.READ)
+		if pf2:
+			var pb2 := FileAccess.open(prog_file, FileAccess.WRITE)
+			if pb2:
+				pb2.store_string(pf2.get_as_text())
+				pb2.close()
+			pf2.close()
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(prog_backup))
+
 	# 汇总
 	print("\n========== UI 集成测试结果 ==========")
 	print("通过: %d   失败: %d" % [t.passed, t.failed])

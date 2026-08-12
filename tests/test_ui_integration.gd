@@ -315,6 +315,12 @@ func _run_tests() -> void:
 	lv._on_board_clicked(9, 8)
 	t.expect(lv.session.ply > 0, "教程棋盘自由落子生效")
 	t.expect(lv._completed, "1-2 落一手完成关卡")
+	# 完成后点「下一关」→ 进入 1-3
+	t.expect_eq(lv._complete_btn.text, "下一关", "完成后按钮文本为「下一关」")
+	lv._on_complete_btn_pressed()
+	t.expect_eq(lv.lesson_idx, 2, "点击下一关切至关卡 2")
+	t.expect_eq(lv.lesson.get("id", ""), "1-3", "关卡 2 数据为 1-3")
+	t.expect(not lv._completed, "新关卡状态重置")
 	lv.queue_free()
 	await get_tree().process_frame
 

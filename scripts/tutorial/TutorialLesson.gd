@@ -123,7 +123,7 @@ func _build_ui() -> void:
 	info_vbox.add_child(btn_row)
 	_complete_btn = _make_button("我已理解，下一关", 200, 40)
 	_complete_btn.visible = false
-	_complete_btn.pressed.connect(func(): _complete())
+	_complete_btn.pressed.connect(_on_complete_btn_pressed)
 	btn_row.add_child(_complete_btn)
 	_pass_btn = _make_button("虚 手", 120, 40)
 	_pass_btn.visible = false
@@ -310,11 +310,30 @@ func _update_complete_btn() -> void:
 	if _complete_btn == null:
 		return
 	var target: String = lesson.get("target", "free")
-	# free 类关卡显示「我已理解」按钮；任务类完成后也显示（可继续/下一关由列表控制）
+	# free 类关卡显示「我已理解」按钮；任务类完成后也显示
 	_complete_btn.visible = (target == "free" or _completed)
 	_complete_btn.text = "下一关" if _completed and lesson_idx < TutorialProgress.TOTAL_LESSONS - 1 else "我已理解，下一关"
 	_pass_btn.visible = (target == "pass")
 	_deploy_btn.visible = (target == "deploy")
+
+# 完成/下一关按钮：未完成→标记完成（free 类直接进入下一关）；已完成→进入下一关（最后一关→返回列表）
+func _on_complete_btn_pressed() -> void:
+	if not _completed:
+		_complete()
+		# free 类关卡一次点击即完成并进入下一关
+		if lesson.get("target", "free") == "free" and lesson_idx < TutorialProgress.TOTAL_LESSONS - 1:
+			_open_next_lesson()
+		return
+	if lesson_idx < TutorialProgress.TOTAL_LESSONS - 1:
+		_open_next_lesson()
+	else:
+		back_requested.emit()
+
+# 切换到下一关（重走 _start_lesson 初始化流程）
+func _open_next_lesson() -> void:
+	lesson_idx += 1
+	lesson = LessonData.get_lesson(lesson_idx)
+	_start_lesson()
 
 # ===== 状态提示 =====
 func _set_status(msg: String, is_error: bool) -> void:

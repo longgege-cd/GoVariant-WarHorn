@@ -149,6 +149,7 @@ func _start_lesson() -> void:
 	_pass_done = false
 	_deploy_armed = false
 	_last_outcome = {}
+	_hover = Vector2i(-1, -1)
 	_player_color = Const.BLACK
 	session = GameSession.new(Const.KOMI_DEFAULT, true)
 	session.emit_signals = true
@@ -233,6 +234,7 @@ func _on_board_clicked(row: int, col: int) -> void:
 		else:
 			_set_status("落子成功", false)
 		queue_redraw()
+		_update_stones_label()
 		_check_complete()
 	else:
 		_set_status("禁止落子：" + out.get("reason", ""), true)

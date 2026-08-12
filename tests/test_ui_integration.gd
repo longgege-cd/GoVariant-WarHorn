@@ -315,6 +315,7 @@ func _run_tests() -> void:
 	lv._on_board_clicked(9, 8)
 	t.expect(lv.session.ply > 0, "教程棋盘自由落子生效")
 	t.expect(lv._completed, "1-2 落一手完成关卡")
+	t.expect(str(lv._stones_left_label.text).contains("111"), "落子后剩余棋子数更新（黑 111）")
 	# 完成后点「下一关」→ 进入 1-3
 	t.expect_eq(lv._complete_btn.text, "下一关", "完成后按钮文本为「下一关」")
 	lv._on_complete_btn_pressed()

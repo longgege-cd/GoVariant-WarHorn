@@ -94,6 +94,21 @@ func _test_checks(t: TestFramework) -> void:
 	t.expect_eq(int(s.counters[Const.BLACK].annihilate), 1, "2-4 歼灭计数 +1")
 	t.expect(TutorialChecks.is_complete("annihilate", s, Const.BLACK), "annihilate 判定完成")
 
+	# annihilate 判定跟随 player_color（玩家切白后白方歼灭也应判定）
+	s = GameSession.new(Const.KOMI_DEFAULT, true)
+	s.to_move = Const.WHITE
+	# 白方领土（行>=10）内围黑：白封气提吃黑子
+	s.board.set_at(12, 6, Const.WHITE)
+	s.board.set_at(14, 6, Const.WHITE)
+	s.board.set_at(13, 7, Const.WHITE)
+	s.board.set_at(13, 6, Const.BLACK)
+	out = s.play_move(Const.WHITE, 13, 5)
+	t.expect(out.ok, "白方提吃合法")
+	t.expect_eq(out.captures.size(), 1, "白提 1 子")
+	t.expect_eq(int(s.counters[Const.WHITE].annihilate), 1, "白歼灭计数 +1")
+	t.expect(TutorialChecks.is_complete("annihilate", s, Const.WHITE), "annihilate 判定跟随白方")
+	t.expect(not TutorialChecks.is_complete("annihilate", s, Const.BLACK), "黑方视角无歼灭不完成")
+
 	# enclosure：2-1 封口形成包围圈
 	l = LessonData.get_lesson(3)
 	s = _session_with_setup(l)

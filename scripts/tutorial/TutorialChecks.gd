@@ -20,7 +20,7 @@ static func is_complete(target: String, session: GameSession, player_color: int,
 		"capture":
 			return has_capture(session, extra)
 		"annihilate":
-			return int(session.counters.get(Const.BLACK, {}).get("annihilate", 0)) > 0
+			return int(session.counters.get(player_color, {}).get("annihilate", 0)) > 0
 		"enclosure":
 			return has_player_enclosure(session, player_color)
 		"siege":

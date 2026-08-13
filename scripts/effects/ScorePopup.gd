@@ -58,6 +58,11 @@ func _ready() -> void:
 			font_size = FONT_SIZE_NORMAL
 			font_color = Color(0.55, 0.35, 0.65, 1.0)
 			outline_color = Color(0.18, 0.05, 0.22, 1.0)
+		"siege_victim":
+			# 被围困方活子分扣减：战争红（与"围困 +N"同点错开显示）
+			font_size = FONT_SIZE_NORMAL
+			font_color = UITheme.C_RED_WAR
+			outline_color = Color(0.25, 0.05, 0.04, 1.0)
 	add_theme_font_size_override("font_size", font_size)
 	add_theme_color_override("font_color", font_color)
 	add_theme_constant_override("outline_size", 4)
@@ -75,6 +80,9 @@ func _ready() -> void:
 			font = ThemeDB.fallback_font
 		var str_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
 		self.position = start_pos - Vector2(str_size.x * 0.5, str_size.y * 0.5)
+		# 与"围困 +N"同点出现时横向错开（活子 -N 显示在右侧）
+		if _type == "siege_victim":
+			self.position.x += 34.0
 	else:
 		self.position = start_pos
 

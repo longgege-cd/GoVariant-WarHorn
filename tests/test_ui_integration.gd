@@ -362,6 +362,36 @@ func _run_tests() -> void:
 			pf2.close()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(prog_backup))
 
+	# ===== 17. 得分扣减动画：围困形成同时触发「围困 +N」与「活子 -N」 =====
+	screen = preload("res://scripts/ui/GameScreen.gd").new()
+	add_child(screen)
+	await get_tree().process_frame
+	var popup_texts: Array = []
+	var eff_hook = func(id: String, payload: Dictionary):
+		if id == "score_popup":
+			popup_texts.append(payload.get("text", ""))
+	EffectsPlayer.effect_started.connect(eff_hook)
+	# 构造围困场景（2-3 教程 setup + 压缩点 (11,10)，空点 4→3 触发围困）
+	var sess: GameSession = screen.session
+	for st in [[10,10,1],[10,11,1],[14,10,1],[14,11,1],[11,9,1],[12,9,1],[13,9,1],[11,12,1],[12,12,1],[13,12,1],[12,10,2],[12,11,2]]:
+		sess.board.set_at(st[0], st[1], st[2])
+	sess.board.set_at(11, 10, Const.BLACK)
+	# set_at 不失效缓存，需手动失效后检测围困（真实对局走 play_move 会自动失效）
+	screen.session._invalidate_cache()
+	screen._detect_and_trigger_territory_siege()
+	var has_siege_plus: bool = false
+	var has_victim_minus: bool = false
+	for txt in popup_texts:
+		if str(txt).begins_with("围困 +"):
+			has_siege_plus = true
+		if str(txt).begins_with("活子 -"):
+			has_victim_minus = true
+	t.expect(has_siege_plus, "围困形成显示「围困 +N」")
+	t.expect(has_victim_minus, "围困形成同时显示被围方「活子 -N」扣分动画")
+	EffectsPlayer.effect_started.disconnect(eff_hook)
+	screen.queue_free()
+	await get_tree().process_frame
+
 	# 汇总
 	print("\n========== UI 集成测试结果 ==========")
 	print("通过: %d   失败: %d" % [t.passed, t.failed])

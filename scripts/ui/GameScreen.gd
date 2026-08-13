@@ -899,6 +899,9 @@ func _detect_and_trigger_territory_siege() -> void:
 		var victim_color: int = session.board.get_at(first_pos.y, first_pos.x)
 		var sieger_color: int = Const.opponent(victim_color)
 		EffectsPlayer.play_score_popup("围困 +%d" % siege_gain, first_pos, sieger_color, "siege")
+		# 被围困方活子分扣减（规则：活→围，进攻方活子分 -1/子）
+		if victim_color != Const.EMPTY:
+			EffectsPlayer.play_score_popup("活子 -%d" % siege_gain, first_pos, victim_color, "siege_victim")
 	if not broken_sieged.is_empty():
 		EffectsPlayer.play_siege_broken(broken_sieged)
 		# 围困解除扣减文字：每次解除都显示（仅当脱困棋子仍存活时）

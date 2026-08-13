@@ -19,6 +19,9 @@ godot_pid.txt
 _*.png
 _*.py
 
+# 临时下载的古谱全集（已精选入库 sgf/）
+.tmp_sgf/
+
 # 测试输出
 test_result.log
 

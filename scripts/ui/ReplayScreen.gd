@@ -26,8 +26,8 @@ func _ready() -> void:
 	set_anchors_preset(PRESET_FULL_RECT)
 	_log("场景启动 — 初始化棋谱回放场景")
 	_build_ui()
-	# 初始空棋盘
-	_session = GameSession.new(Const.KOMI_DEFAULT, false)
+	# 初始空棋盘（回放不受兵力限制：piece_limit=361 即 19×19 全盘上限）
+	_session = GameSession.new(Const.KOMI_DEFAULT, false, 361)
 	_board_view.set_session(_session)
 	_black_score_panel.set_session(_session)
 	_white_score_panel.set_session(_session)
@@ -221,7 +221,7 @@ func _load_sgf_and_play(path: String) -> void:
 
 func _compute_replay_score_history() -> void:
 	_replay_score_history = []
-	var sim := GameSession.new(Const.KOMI_DEFAULT, false)
+	var sim := GameSession.new(Const.KOMI_DEFAULT, false, 361)
 	sim.emit_signals = false
 	sim.skip_endgame = true
 	var sc0: Dictionary = sim.scores()
@@ -280,8 +280,8 @@ func _jump_to_replay_ply(ply: int) -> void:
 	if ply == _current_ply + 1 and ply <= _replay_total_moves:
 		_step_forward()
 		return
-	# 任意跳转：重置 session，重放前 ply 手
-	_session = GameSession.new(Const.KOMI_DEFAULT, false)
+	# 任意跳转：重置 session，重放前 ply 手（回放不受兵力限制，piece_limit=361）
+	_session = GameSession.new(Const.KOMI_DEFAULT, false, 361)
 	# 禁用信号发射，跳过每步的 scores() 计算（性能优化：222 手从 74s → <1s）
 	_session.emit_signals = false
 	# 跳过 do_pass 的终局判定（避免 _both_cannot_move 的 O(N⁴) 遍历和 final_result 终局结算）

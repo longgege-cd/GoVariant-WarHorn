@@ -49,6 +49,8 @@ func _generate_all_sounds() -> void:
 	_sounds["deploy"] = _gen_deploy_sound()     # 部署：金属"锵"
 	_sounds["siege"] = _gen_siege_sound()       # 围困：低沉"嗡"
 	_sounds["game_end"] = _gen_game_end_sound() # 终局：号角
+	_sounds["game_open"] = _gen_game_open_sound() # 正式开局：上扬号角
+	_sounds["deploy_place"] = _gen_deploy_place_sound() # 布局落子：清脆"嗒"
 
 # 落子音：800Hz 正弦波 + 1200Hz 泛音，0.08秒，快速衰减
 func _gen_place_sound() -> AudioStreamWAV:
@@ -151,6 +153,46 @@ func _gen_game_end_sound() -> AudioStreamWAV:
 			env = exp(-(t - 0.3) * 2.0)  # 渐弱
 		# 和弦：392Hz(军号) + 523Hz(高八度) + 196Hz(低八度)
 		var wave: float = 0.3 * sin(t * TAU * 392) + 0.2 * sin(t * TAU * 523) + 0.15 * sin(t * TAU * 196)
+		var val: int = int(wave * env * 32767)
+		val = clamp(val, -32768, 32767)
+		_encode_s16(data, i * 2, val)
+	return _make_wav(data, sample_rate)
+
+# 正式开局音：上扬号角（C大调琶音 C4→E4→G4→C5 逐级渐强 + 延音收尾），0.9秒
+func _gen_game_open_sound() -> AudioStreamWAV:
+	var sample_rate: int = 22050
+	var duration: float = 0.9
+	var samples: int = int(sample_rate * duration)
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(samples * 2)
+	# 上行琶音频率
+	var steps: Array = [262.0, 330.0, 392.0, 523.0]
+	var step_dur: float = duration / steps.size()
+	for i in samples:
+		var t: float = float(i) / sample_rate
+		var step: int = min(int(t / step_dur), steps.size() - 1)
+		var freq: float = steps[step]
+		# 包络：每步内渐强 → 整体渐强 → 尾部延音渐弱
+		var step_local: float = fmod(t, step_dur) / step_dur
+		var env: float = (0.5 + 0.5 * step_local) * (0.35 + 0.65 * min(t / 0.3, 1.0))
+		env *= exp(-max(0.0, t - 0.55) * 3.0)
+		var wave: float = 0.4 * sin(t * TAU * freq) + 0.2 * sin(t * TAU * freq * 2.0) + 0.12 * sin(t * TAU * freq * 0.5)
+		var val: int = int(wave * env * 32767)
+		val = clamp(val, -32768, 32767)
+		_encode_s16(data, i * 2, val)
+	return _make_wav(data, sample_rate)
+
+# 布局落子音：1400Hz 短促"嗒"，0.05秒，极快衰减（与正式落子区分）
+func _gen_deploy_place_sound() -> AudioStreamWAV:
+	var sample_rate: int = 22050
+	var duration: float = 0.05
+	var samples: int = int(sample_rate * duration)
+	var data: PackedByteArray = PackedByteArray()
+	data.resize(samples * 2)
+	for i in samples:
+		var t: float = float(i) / sample_rate
+		var env: float = exp(-t * 60.0)
+		var wave: float = 0.6 * sin(t * TAU * 1400) + 0.3 * sin(t * TAU * 2100)
 		var val: int = int(wave * env * 32767)
 		val = clamp(val, -32768, 32767)
 		_encode_s16(data, i * 2, val)

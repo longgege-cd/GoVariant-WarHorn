@@ -117,6 +117,24 @@ func play_game_end(result: Dictionary) -> void:
 	_play_sound("game_end")
 	effect_started.emit("game_end", {"result": result})
 
+# 正式开局音效（3.2.1 倒计时结束后由 GameScreen 播放上扬号角；不再发射棋盘动画）
+func play_game_open() -> void:
+	if not enabled:
+		return
+	Log.d("[特效] 正式开局号角")
+	_play_sound("game_open")
+
+# 布局阶段落子特效（布局落子专属，与正式落子区分）
+func play_deploy_place(position: Vector2i, color: int) -> void:
+	if not enabled:
+		return
+	Log.d("[特效] 布局落子 pos=%s color=%d" % [str(position), color])
+	_play_sound("deploy_place")
+	effect_started.emit("deploy_place", {
+		"position": position,
+		"color": color,
+	})
+
 # 音效播放（委托给 AudioManager）
 func play_sound(name: String) -> void:
 	_play_sound(name)

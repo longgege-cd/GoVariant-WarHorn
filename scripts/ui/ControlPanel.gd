@@ -181,13 +181,21 @@ func _on_mode_selected(mode: String, difficulty: int) -> void:
 	mode_selected.emit(mode, difficulty)
 
 # 根据当前局面更新按钮状态
-func update_state(session: GameSession, deploy_mode: bool) -> void:
+# deploy_phase=true（布局阶段）：禁用虚手/认输/部署/悔棋，仅允许布局落子
+func update_state(session: GameSession, deploy_mode: bool, deploy_phase: bool = false) -> void:
 	if session == null:
 		return
 	var game_over: bool = session.game_over
+	if deploy_phase:
+		_pass_btn.disabled = true
+		_resign_btn.disabled = true
+		_deploy_btn.disabled = true
+		_undo_btn.disabled = true
+		return
 	_pass_btn.disabled = game_over
 	_resign_btn.disabled = game_over
 	_deploy_btn.disabled = game_over or not session.special.enabled
+	_undo_btn.disabled = game_over or not session.can_undo()
 	if deploy_mode:
 		_deploy_btn.text = "取消部署"
 	else:

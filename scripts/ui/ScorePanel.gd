@@ -49,6 +49,11 @@ var _c_accent: Color = UITheme.C_GOLD
 # 头像（从 user://avatars/{black|white}.png 加载，圆形裁剪；缺失则绘制占位符）
 var _avatar_tex: ImageTexture = null
 var _avatar_radius: float = 30.0  # 头像绘制半径
+# 布局阶段状态（GameScreen 每帧推送）：布局倒计时条显示在模块0计时条位置
+var _deploy_active: bool = false  # 是否处于布局阶段
+var _deploy_time_left: float = 120.0  # 共享布局剩余秒
+var _deploy_stones: int = 0  # 本方已布子数
+var _deploy_total: int = 2  # 本方应布子总数
 # 分数条动态基准：各分量历史最大值（只增不减），条形随分数增长而变长，不因其他分量变化抖动
 var _bar_tracker := ScoreBarTracker.new()
 
@@ -427,6 +432,18 @@ func set_timer(t: TimerSystem) -> void:
 	timer = t
 	queue_redraw()
 
+# 布局阶段状态（GameScreen 每帧推送）
+# active: 布局是否进行中；time_left: 共享剩余秒；stones: 本方已布子数；total: 本方应布子总数
+func set_deploy_state(active: bool, time_left: float, stones: int, total: int) -> void:
+	var changed: bool = _deploy_active != active or absf(_deploy_time_left - time_left) > 0.3 \
+		or _deploy_stones != stones or _deploy_total != total
+	_deploy_active = active
+	_deploy_time_left = time_left
+	_deploy_stones = stones
+	_deploy_total = total
+	if changed:
+		queue_redraw()
+
 # 接收分数更新（双方分数都传入）
 func on_scores_changed(scores: Dictionary) -> void:
 	var my_bk = scores.black if side == Const.BLACK else scores.white
@@ -483,6 +500,9 @@ func _process(delta: float) -> void:
 		queue_redraw()
 	# 呼吸边框持续重绘
 	if session and not session.game_over and session.to_move == side:
+		queue_redraw()
+	# 布局阶段：倒计时数字逐秒变化，双方面板都需持续重绘
+	if _deploy_active:
 		queue_redraw()
 	# 部署按钮：位置/文字/可用性随行棋方与特种状态变化
 	_update_deploy_button()
@@ -786,6 +806,10 @@ func _draw_active_indicator(cx: float, cy: float, color: Color) -> void:
 func _draw_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) -> void:
 	if timer == null:
 		return
+	# 布局阶段：模块0计时条改显示共享布局倒计时（2 分钟）+ 本方布子进度
+	if _deploy_active:
+		_draw_deploy_timer_bar(x, y, w, h, is_active)
+		return
 	var font: Font = get_theme_default_font()
 	# 时间数字字号加大（原 coord_font_size - 2 → +6），居中显示在计时条上方
 	var label_fs: int = max(16, _theme.coord_font_size + 6)
@@ -897,6 +921,80 @@ func _draw_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) ->
 	num_c.a = 0.95 if is_active else 0.65
 	# 时间数字居中显示在计时条上方，紧贴计时条留 2px 缝隙
 	font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y - 2), time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, num_c)
+
+# 布局阶段计时条（模块0位置）：共享 2 分钟倒计时
+#   行棋方：金色呼吸灯脉动（突出显示"轮到谁布局"）+ 流光；非行棋方：正常显示
+#   剩余<30s 整条红色呼吸
+func _draw_deploy_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) -> void:
+	var font: Font = get_theme_default_font()
+	var label_fs: int = max(16, _theme.coord_font_size + 6)
+	var remain: float = max(0.0, _deploy_time_left)
+	var ratio: float = clamp(remain / 120.0, 0.0, 1.0)
+	var low_time: bool = remain <= 30.0
+	var breath_pulse: float = 0.0
+	if low_time:
+		var breath_freq: float = lerp(2.0, 8.0, 1.0 - clamp(remain / 30.0, 0.0, 1.0))
+		breath_pulse = 0.5 + 0.5 * sin(_time * breath_freq * TAU * 0.5)
+	# 凹槽背景 + 像素风描边
+	var bg_c := Color(0, 0, 0, 0.55)
+	draw_rect(Rect2(x, y, w, h), bg_c, true)
+	var border_c := _c_dim
+	border_c.a = 0.55
+	draw_rect(Rect2(x, y, w, h), border_c, false, 1.0)
+	# 填充色：<30s 红呼吸 / 正常暖金
+	var fill_c: Color
+	if low_time:
+		fill_c = Color(0.95, 0.2, 0.15).lerp(Color(1.0, 0.55, 0.3), breath_pulse)
+	else:
+		fill_c = Color(1.0, 0.85, 0.4)
+	var fill_w: float = w * ratio
+	if fill_w > 1.0:
+		var fc := fill_c
+		fc.a = 0.95 if is_active else 0.7
+		draw_rect(Rect2(x + 1, y + 1, fill_w - 2, h - 2), fc, true)
+	# 行棋方呼吸灯：金色光晕脉冲 + 整条呼吸提亮（突出"轮到谁布局"）
+	if is_active and not low_time:
+		var bp: float = 0.5 + 0.5 * sin(_time * 3.0)
+		var glow_c := Color(1.0, 0.85, 0.4, 0.25 + 0.45 * bp)
+		var gw: float = 3.0 + 3.0 * bp
+		draw_rect(Rect2(x - gw, y - gw, w + gw * 2, gw), glow_c, true)
+		draw_rect(Rect2(x - gw, y + h, w + gw * 2, gw), glow_c, true)
+		draw_rect(Rect2(x - gw, y, gw, h), glow_c, true)
+		draw_rect(Rect2(x + w, y, gw, h), glow_c, true)
+		# 整条呼吸提亮
+		var inner_c := Color(1.0, 0.9, 0.5, 0.12 + 0.16 * bp)
+		draw_rect(Rect2(x + 1, y + 1, w - 2, h - 2), inner_c, true)
+	# 行棋方流光
+	if is_active and fill_w > 8.0 and not low_time:
+		var flow_w: float = min(fill_w * 0.35, 26.0)
+		var cycle: float = fill_w + flow_w
+		var phase: float = fmod(_time * 50.0, cycle)
+		var flow_x: float = x + 1 + phase - flow_w
+		var steps: int = int(flow_w)
+		for i in steps:
+			var fx: float = flow_x + i
+			if fx <= x + 1 or fx >= x + fill_w - 1:
+				continue
+			var a: float = sin(float(i) / float(max(1, steps)) * PI) * 0.55
+			draw_line(Vector2(fx, y + 1), Vector2(fx, y + h - 1), Color(1, 1, 1, a), 1.0)
+	# 低时间外发光
+	if low_time:
+		var glow_w: float = 2.0 + 2.0 * breath_pulse
+		var g_c := Color(1.0, 0.3, 0.2, (0.35 + 0.45 * breath_pulse) * 0.5)
+		draw_rect(Rect2(x - glow_w, y - glow_w, w + glow_w * 2, glow_w), g_c, true)
+		draw_rect(Rect2(x - glow_w, y + h, w + glow_w * 2, glow_w), g_c, true)
+		draw_rect(Rect2(x - glow_w, y, glow_w, h), g_c, true)
+		draw_rect(Rect2(x + w, y, glow_w, h), g_c, true)
+	# 剩余时间文字（居中于计时条上方，行棋方随呼吸微放大）
+	var mm: int = int(remain) / 60
+	var ss: int = int(remain) % 60
+	var time_str: String = "%d:%02d" % [mm, ss]
+	var num_c: Color = fill_c if is_active else _c_dim
+	num_c.a = 0.95
+	var fs_eff: int = label_fs
+	if is_active and not low_time:
+		fs_eff = int(label_fs * (1.0 + 0.06 * sin(_time * 3.0)))
+	font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y - 2), time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, fs_eff, num_c)
 
 # 绘制头像：有纹理画纹理，无纹理画像素风占位符（棋子色圆 + 人头剪影）
 func _draw_avatar(cx: float, cy: float, radius: float) -> void:

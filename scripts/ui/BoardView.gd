@@ -27,9 +27,14 @@ var _theme: BaseTheme = null
 var _last_redraw_time: int = 0  # 限频重绘（呼吸动画 30fps）
 var _error_flash: float = 0.0  # 非法操作红色边框闪烁强度（0~1，逐帧衰减）
 var _deploy_mode: bool = false  # 部署特种部队模式（边框呼吸 + 顶部小横条提示）
-# 开局领土/边境线波浪动画（新对局后持续 2.5 秒）
+# 布局阶段（双方在己方领土布子）：领土呼吸辉光 + 未开放的前线封条
+var deploy_phase: bool = false
+# 开局领土/边境线波浪动画（新对局后持续 1.7 秒）
 var _opening_anim_time: float = 0.0  # 剩余秒数（>0 表示动画进行中）
-const OPENING_ANIM_DURATION: float = 2.5  # 总时长
+const OPENING_ANIM_DURATION: float = 1.7  # 总时长
+# 正式开局圆形扩散波浪：从棋盘中央开始，波纹沿方格向四周扩散，持续 1.4 秒
+var _circular_wave_time: float = 0.0  # 剩余秒数（>0 表示动画进行中）
+const CIRCULAR_WAVE_DURATION: float = 1.4  # 总时长
 
 func _ready() -> void:
 	_theme = ThemeManager.current
@@ -48,8 +53,23 @@ func _on_theme_changed(new_theme: BaseTheme) -> void:
 func set_session(s: GameSession) -> void:
 	session = s
 	last_move = Vector2i(-1, -1)
-	# 触发开局领土波浪动画
+	# 触发开局领土/边境线波浪动画
 	_opening_anim_time = OPENING_ANIM_DURATION
+	queue_redraw()
+
+# 设置布局阶段状态（开启后绘制布局氛围：领土呼吸辉光 + 前线封条）
+func set_deploy_phase(m: bool) -> void:
+	deploy_phase = m
+	queue_redraw()
+
+# 正式开局时重放领土/边境线波浪动画（过渡到正式对局视觉）
+func replay_opening_anim() -> void:
+	_opening_anim_time = OPENING_ANIM_DURATION
+	queue_redraw()
+
+# 正式开局圆形扩散波浪：从棋盘中央开始，波纹沿方格向四周扩散
+func play_opening_circular_wave() -> void:
+	_circular_wave_time = CIRCULAR_WAVE_DURATION
 	queue_redraw()
 
 # 接收行棋结果并更新视图
@@ -112,6 +132,9 @@ func _draw() -> void:
 		_draw_zone_hints(size)
 	# 3. 边境线高亮
 	_draw_border_zone_highlight(size)
+	# 3.5 布局阶段氛围（领土呼吸辉光 + 未开放的前线封条）
+	if deploy_phase:
+		_draw_deploy_ambience(size)
 	# 4. 网格 + 星位
 	_draw_grid(size)
 	# 5. 坐标标签
@@ -136,6 +159,9 @@ func _draw() -> void:
 	_draw_hover_preview()
 	# 12. 特效叠加
 	_draw_effect_overlays()
+	# 12.5 正式开局圆形扩散波浪（棋盘方格波纹，绘制在棋子上层）
+	if _circular_wave_time > 0:
+		_draw_circular_wave()
 	# 13. 非法操作红色边框闪烁
 	if _error_flash > 0.01:
 		var c := Color(0.95, 0.20, 0.15, _error_flash * 0.85)
@@ -260,6 +286,35 @@ func _draw_border_zone_highlight(total_size: int) -> void:
 	else:
 		pass  # 使用默认 color.a
 	draw_rect(Rect2(margin, y, cs * 18, cs), color, true)
+
+# 布局阶段氛围：己方领土呼吸辉光 + 未开放的前线封条（暗色横带 + 金色虚线）
+func _draw_deploy_ambience(total_size: int) -> void:
+	if _theme == null:
+		return
+	var margin: int = _theme.board_margin
+	var cs: int = _theme.cell_size
+	# 呼吸节奏（1.6s 周期，领土辉光脉动）
+	var t: float = fmod(Time.get_ticks_msec() / 1000.0, 1.6) / 1.6
+	var pulse: float = 0.5 + 0.5 * sin(t * TAU)
+	# 1. 领土呼吸辉光：黑境冷蓝 / 白境暖金
+	var top_h: int = cs * 9
+	var bot_y: int = margin + cs * 10
+	var bot_h: int = cs * 9
+	var black_glow := Color(0.35, 0.55, 0.85, 0.10 + 0.08 * pulse)
+	draw_rect(Rect2(margin, margin, cs * 18, top_h), black_glow, true)
+	var white_glow := Color(0.95, 0.78, 0.32, 0.10 + 0.08 * pulse)
+	draw_rect(Rect2(margin, bot_y, cs * 18, bot_h), white_glow, true)
+	# 2. 未开放的前线（边境线行9）：暗色封条 + 中央金色虚线（正式开局时消散）
+	var band_y: float = margin + cs * 9 - cs * 0.5
+	draw_rect(Rect2(margin, band_y, cs * 18, cs), Color(0.05, 0.03, 0.09, 0.55), true)
+	var y: float = margin + cs * 9
+	var i: float = margin
+	var seg_len: float = cs * 0.5
+	var gap: float = cs * 0.35
+	var dash_c := Color(1.0, 0.85, 0.4, 0.50 + 0.30 * pulse)
+	while i < margin + cs * 18:
+		draw_line(Vector2(i, y), Vector2(min(i + seg_len, margin + cs * 18), y), dash_c, 2.0)
+		i += seg_len + gap
 
 func _draw_grid(_total_size: int) -> void:
 	var margin: int = _theme.board_margin
@@ -501,6 +556,8 @@ func _draw_effect_overlays() -> void:
 				_draw_bounce_flash(ov, t)
 			"move":
 				_draw_move_pulse(ov, t)
+			"deploy_place":
+				_draw_deploy_place_pulse(ov, t)
 			"special_deploy":
 				_draw_deploy_burst(ov, t)
 			"reveal":
@@ -584,6 +641,19 @@ func _draw_move_pulse(ov: Dictionary, t: float) -> void:
 	var alpha: float = (1.0 - t) * 0.5
 	var color: Color = Color(1.0, 0.95, 0.4, alpha)
 	draw_arc(pos, _theme.stone_radius() * (1.0 + t * 0.5), 0, TAU, 24, color, 1.5)
+
+# 布局落子脉冲：青绿色双层扩散环（与正式落子金色区分，突出布局阶段）
+func _draw_deploy_place_pulse(ov: Dictionary, t: float) -> void:
+	var pos_v: Vector2i = ov.get("position", Vector2i(-1, -1))
+	if pos_v.x < 0:
+		return
+	var pos: Vector2 = _cell_to_pixel(pos_v.y, pos_v.x)
+	var alpha: float = (1.0 - t) * 0.6
+	var base_r: float = _theme.stone_radius()
+	# 内层亮环
+	draw_arc(pos, base_r * (1.0 + t * 0.6), 0, TAU, 24, Color(0.35, 0.9, 0.65, alpha), 2.0)
+	# 外层扩散环
+	draw_arc(pos, base_r * (1.2 + t * 1.6), 0, TAU, 24, Color(0.2, 0.7, 0.5, alpha * 0.6), 1.5)
 
 # 部署特种部队：金色爆裂 + 十字光
 # 隐子位置保密：仅己方视角（或观战）下在落子位置画特效；对方视角下画在棋盘中心避免泄露
@@ -730,6 +800,51 @@ func _draw_game_end_effect(ov: Dictionary, t: float) -> void:
 	var r: float = _theme.stone_radius() * (1.0 + t * 8.0)
 	draw_circle(center, r, Color(1.0, 0.9, 0.5, alpha * 0.3))
 
+# 正式开局圆形扩散波浪：从棋盘中央开始，每个棋盘方格按到中心的距离呈现
+# 波纹起伏（半径随时间增大 → 波纹向外扩散），整体强度 0→1→0 淡入淡出
+func _draw_circular_wave() -> void:
+	if _theme == null or _circular_wave_time <= 0.0:
+		return
+	var margin: int = _theme.board_margin
+	var cs: int = _theme.cell_size
+	var progress: float = 1.0 - _circular_wave_time / CIRCULAR_WAVE_DURATION  # 0→1
+	var intensity: float = sin(progress * PI)  # 整体强度 0→1→0
+	var t: float = Time.get_ticks_msec() / 1000.0
+	# 棋盘中央（18 格区域中心）
+	var center_x: float = margin + cs * 9.0
+	var center_y: float = margin + cs * 9.0
+	# 波纹参数：波长（格/周期）与扩散速度（格/秒，慢速从容扩散）
+	var wavelength: float = 2.4
+	var wave_speed: float = 3.8
+	var phase_base: float = -t * wave_speed * TAU / wavelength
+	for gr in 18:
+		var row_center: float = gr + 0.5
+		var y: float = margin + cs * gr
+		for gc in 18:
+			var col_center: float = gc + 0.5
+			var dx: float = col_center - 9.0
+			var dy: float = row_center - 9.0
+			var dist: float = sqrt(dx * dx + dy * dy)
+			# 波纹相位：距离越远相位越滞后（圆环），随时间向外扩散
+			var phase: float = dist * TAU / wavelength + phase_base
+			# 多环叠加：2 个波纹层
+			var wave: float = (sin(phase) + 0.5 * sin(phase * 2.0 + 0.6)) * 0.5
+			wave = max(0.0, wave) * intensity
+			if wave < 0.05:
+				continue
+			var x: float = margin + cs * gc
+			# 颜色：随波纹强度 + 距中心距离微调（中心暖白 → 边缘冷金）
+			var warm: float = clamp(1.0 - dist / 13.0, 0.2, 1.0)
+			var c := Color(1.0, 0.85 + 0.1 * warm, 0.45, 0.42 * wave)
+			draw_rect(Rect2(x, y, cs, cs), c, true)
+	# 中心光晕（波纹源点，随动画呼吸）
+	var center_glow_a: float = 0.35 * intensity
+	draw_circle(Vector2(center_x, center_y), cs * (1.2 + 0.6 * intensity), Color(1.0, 0.95, 0.6, center_glow_a))
+	# 扩散前沿光环（随波纹半径移动）
+	var ring_r: float = fmod(t * wave_speed * cs, cs * 13.0)
+	var ring_a: float = 0.30 * intensity
+	draw_arc(Vector2(center_x, center_y), ring_r, 0, TAU, 64, Color(1.0, 0.9, 0.5, ring_a), 2.0)
+
 # ===== 坐标转换 =====
 func _cell_to_pixel(row: int, col: int) -> Vector2:
 	var margin: int = _theme.board_margin
@@ -769,10 +884,14 @@ func _process(_delta: float) -> void:
 	if _opening_anim_time > 0:
 		_opening_anim_time = max(0.0, _opening_anim_time - _delta)
 		queue_redraw()
+	# 正式开局圆形扩散波浪倒计时
+	if _circular_wave_time > 0:
+		_circular_wave_time = max(0.0, _circular_wave_time - _delta)
+		queue_redraw()
 	if not effect_overlays.is_empty():
 		_cleanup_overlays()
-	# 是否需要持续重绘（呼吸动画/全息环/特效叠加/部署模式指示/开局波浪）
-	var need_anim: bool = _theme != null and (_theme.border_zone_pulse or _theme.holographic_ring or _deploy_mode or not effect_overlays.is_empty() or _opening_anim_time > 0)
+	# 是否需要持续重绘（呼吸动画/全息环/特效叠加/部署模式指示/开局波浪/圆形波浪/布局阶段）
+	var need_anim: bool = _theme != null and (_theme.border_zone_pulse or _theme.holographic_ring or _deploy_mode or not effect_overlays.is_empty() or _opening_anim_time > 0 or _circular_wave_time > 0 or deploy_phase)
 	if not need_anim:
 		return
 	# 限频 30fps（呼吸/全息环不需要 60fps，降低 GPU 负载）

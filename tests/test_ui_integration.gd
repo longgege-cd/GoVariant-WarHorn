@@ -27,6 +27,8 @@ func _run_tests() -> void:
 	# 1. 实例化 GameScreen
 	var screen_script := preload("res://scripts/ui/GameScreen.gd")
 	var screen: Control = screen_script.new()
+	# 布局阶段在独立测试节（第 18 节）验证；此处关闭以保持原有单阶段对局流程
+	screen.deployment_enabled = false
 	t.expect(screen != null, "GameScreen 实例化")
 	add_child(screen)
 	await get_tree().process_frame
@@ -390,6 +392,85 @@ func _run_tests() -> void:
 	t.expect(has_victim_minus, "围困形成同时显示被围方「活子 -N」扣分动画")
 	EffectsPlayer.effect_started.disconnect(eff_hook)
 	screen.queue_free()
+	await get_tree().process_frame
+
+	# ===== 18. 布局阶段：两阶段对局（布局 → 正式开局） =====
+	var dscreen: Control = preload("res://scripts/ui/GameScreen.gd").new()
+	add_child(dscreen)
+	await get_tree().process_frame
+	# 初始：进入布局阶段、2 分钟倒计时、棋盘布局氛围开启、双方得分板显示布局倒计时条
+	t.expect(dscreen._deploy_phase, "新对局进入布局阶段")
+	t.expect(dscreen._deploy_time_left > 119.0, "布局初始倒计时约 120 秒")
+	t.expect(dscreen.board_view.deploy_phase, "棋盘布局氛围已开启")
+	t.expect(dscreen.black_score_panel._deploy_active, "黑方得分板显示布局倒计时条")
+	t.expect(dscreen.white_score_panel._deploy_active, "白方得分板显示布局倒计时条")
+	t.expect_eq(dscreen.black_score_panel._deploy_stones, 0, "黑方得分板布子进度=0")
+	t.expect_eq(dscreen.white_score_panel._deploy_stones, 0, "白方得分板布子进度=0")
+	# 布局期禁止虚手 / 部署特种 / 悔棋
+	dscreen._on_pass()
+	await get_tree().process_frame
+	t.expect_eq(dscreen.session.ply, 0, "布局阶段虚手被拒绝")
+	dscreen._on_deploy_button()
+	t.expect(not dscreen._deploy_mode, "布局阶段部署特种被拒绝")
+	# 越界落子（黑点白境）被拒
+	dscreen._on_cell_clicked(10, 10)
+	await get_tree().process_frame
+	t.expect_eq(dscreen.session.ply, 0, "黑下白境被拒")
+	t.expect_eq(dscreen.session.board.get_at(10, 10), Const.EMPTY, "白境未落子")
+	# 黑布第 1 子（己方领土）
+	dscreen._on_cell_clicked(5, 5)
+	await get_tree().process_frame
+	t.expect_eq(dscreen.session.ply, 1, "黑布局第 1 子")
+	t.expect_eq(dscreen._deploy_stones[Const.BLACK], 1, "黑布子数=1")
+	t.expect_eq(dscreen.black_score_panel._deploy_stones, 1, "黑方得分板布子进度同步=1")
+	# 白布第 1 子（己方领土）
+	dscreen._on_cell_clicked(14, 14)
+	await get_tree().process_frame
+	t.expect_eq(dscreen.session.ply, 2, "白布局第 1 子")
+	t.expect_eq(dscreen._deploy_stones[Const.WHITE], 1, "白布子数=1")
+	# 黑布第 2 子
+	dscreen._on_cell_clicked(3, 3)
+	await get_tree().process_frame
+	t.expect_eq(dscreen.session.ply, 3, "黑布局第 2 子")
+	# 白布第 2 子 → 双方布满 → 正式开局（_begin_playing 为 call_deferred）
+	dscreen._on_cell_clicked(14, 13)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	t.expect(not dscreen._deploy_phase, "双方布满 2 子后退出布局阶段")
+	t.expect(not dscreen.board_view.deploy_phase, "棋盘布局氛围已关闭")
+	t.expect(not dscreen.black_score_panel._deploy_active, "开局后黑方得分板倒计时条关闭")
+	t.expect(not dscreen.white_score_panel._deploy_active, "开局后白方得分板倒计时条关闭")
+	# 正式开局圆形扩散波浪已触发
+	t.expect(dscreen.board_view._circular_wave_time > 0.0, "正式开局圆形扩散波浪已触发（1.4 秒）")
+	t.expect(dscreen.board_view._circular_wave_time <= 1.4, "圆形波浪时长上限 1.4 秒")
+	# 开局后可任意落子（不再限制领土）
+	dscreen._on_cell_clicked(10, 10)
+	await get_tree().process_frame
+	t.expect_eq(dscreen.session.ply, 5, "正式开局后黑可下白境（第 5 手）")
+	# 布局超时自动正式开局
+	var tscreen2: Control = preload("res://scripts/ui/GameScreen.gd").new()
+	add_child(tscreen2)
+	await get_tree().process_frame
+	t.expect(tscreen2._deploy_phase, "新对局再次进入布局阶段")
+	tscreen2._deploy_time_left = 0.05
+	await get_tree().create_timer(0.2).timeout
+	await get_tree().process_frame
+	t.expect(not tscreen2._deploy_phase, "布局倒计时耗尽自动正式开局")
+	t.expect_eq(tscreen2.session.ply, 0, "超时开局保留已布棋子（此时 0 子）")
+	# AI 布局偏好点合法性：必须全部位于己方领土（不含边境线）
+	var pref_ok_black: bool = true
+	for p in dscreen.DEPLOY_PREF_BLACK:
+		if Const.zone_of_row(p.y) != Const.own_zone(Const.BLACK):
+			pref_ok_black = false
+	var pref_ok_white: bool = true
+	for p in dscreen.DEPLOY_PREF_WHITE:
+		if Const.zone_of_row(p.y) != Const.own_zone(Const.WHITE):
+			pref_ok_white = false
+	t.expect(pref_ok_black, "AI 黑布局偏好点均在己方领土")
+	t.expect(pref_ok_white, "AI 白布局偏好点均在己方领土")
+	tscreen2.queue_free()
+	await get_tree().process_frame
+	dscreen.queue_free()
 	await get_tree().process_frame
 
 	# 汇总

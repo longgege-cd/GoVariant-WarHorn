@@ -50,6 +50,28 @@ var _room_list_dlg: AcceptDialog = null  # 客户端房间列表对话框
 var _room_wait_dlg: AcceptDialog = null  # 主机等待对手对话框
 # 联机/PvE 状态提示条（在棋盘与控制面板之间显示）
 var _status_label: Label = null
+# ===== 布局阶段（两阶段对局：布局 → 正式开局）=====
+# 布局阶段：双方轮流在己方领土各布 2 子，共用 2 分钟倒计时；
+# 双方布子完成或超时 → 正式开局（边境线开放，播放开局动画+音效）
+var deployment_enabled: bool = true  # 是否启用布局阶段（测试/回放可关闭）
+const DEPLOY_STONES_PER_SIDE: int = 2  # 每方布局子数
+const DEPLOY_TIME_LIMIT: float = 120.0  # 布局阶段总时长（秒）= 2 分钟
+# 布局阶段 AI 布子偏好点（Vector2i(col,row)，仅限己方领土：黑行0-8 / 白行10-18）
+const DEPLOY_PREF_BLACK: Array = [
+	Vector2i(9, 7), Vector2i(9, 5), Vector2i(3, 7), Vector2i(15, 7),
+	Vector2i(9, 3), Vector2i(9, 1), Vector2i(5, 5), Vector2i(13, 5),
+	Vector2i(3, 5), Vector2i(15, 5), Vector2i(5, 3), Vector2i(13, 3),
+	Vector2i(3, 3), Vector2i(15, 3),
+]
+const DEPLOY_PREF_WHITE: Array = [
+	Vector2i(9, 11), Vector2i(9, 13), Vector2i(3, 11), Vector2i(15, 11),
+	Vector2i(9, 15), Vector2i(9, 17), Vector2i(5, 13), Vector2i(13, 13),
+	Vector2i(3, 15), Vector2i(15, 15), Vector2i(5, 17), Vector2i(13, 17),
+	Vector2i(3, 17), Vector2i(15, 17),
+]
+var _deploy_phase: bool = false  # 当前是否处于布局阶段
+var _deploy_stones: Dictionary = {}  # color -> 已布子数
+var _deploy_time_left: float = DEPLOY_TIME_LIMIT  # 布局剩余时间
 
 func _ready() -> void:
 	_ensure_avatar_dir()
@@ -85,6 +107,15 @@ func _process(_delta: float) -> void:
 	# 纯黑背景无需每帧重绘，但需推进计时器
 	if _timer != null and session != null and not session.game_over:
 		_timer.tick(_delta)
+	# 布局阶段：推进 2 分钟倒计时，超时自动正式开局；倒计时同步到双方得分板
+	if _deploy_phase and session != null and not session.game_over:
+		_deploy_time_left -= _delta
+		if _deploy_time_left <= 0.0:
+			_deploy_time_left = 0.0
+			_push_deploy_to_panels()
+			call_deferred("_begin_playing")
+		else:
+			_push_deploy_to_panels()
 
 func _exit_tree() -> void:
 	# 节点销毁时回收 AI 线程，避免线程泄漏
@@ -433,6 +464,20 @@ func _new_game() -> void:
 		black_score_panel.reload_avatar()
 	if white_score_panel != null and white_score_panel.has_method("reload_avatar"):
 		white_score_panel.reload_avatar()
+	# 布局阶段初始化：重置布子计数与 2 分钟倒计时
+	_deploy_phase = deployment_enabled
+	_deploy_stones = {Const.BLACK: 0, Const.WHITE: 0}
+	_deploy_time_left = DEPLOY_TIME_LIMIT
+	if board_view != null:
+		board_view.set_deploy_phase(_deploy_phase)
+	# 布局阶段暂停思考时间计时（布局使用独立的 2 分钟倒计时）
+	if _timer != null:
+		if _deploy_phase:
+			_timer.pause()
+		else:
+			_timer.resume()
+	_push_deploy_to_panels()
+	_update_controls()
 
 # 根据当前模式（PvP/PvE/联机）更新得分板角色名与可控性
 #   PvP     → 黑方 / 白方
@@ -484,6 +529,10 @@ func _on_new_game() -> void:
 func _on_pass() -> void:
 	if session == null:
 		return
+	# 布局阶段禁止虚手（必须完成布局落子）
+	if _deploy_phase:
+		_show_error("布局阶段请先完成布局落子")
+		return
 	if _online_mode:
 		# 联机：仅本地玩家轮次可操作，通过 NetSync 路由
 		if session.to_move != NetworkManager.local_color:
@@ -499,6 +548,10 @@ func _on_pass() -> void:
 
 func _on_resign() -> void:
 	if session == null:
+		return
+	# 布局阶段禁止认输（对局尚未正式开局）
+	if _deploy_phase:
+		_show_error("布局阶段无法认输")
 		return
 	if _online_mode:
 		# 联机认输：通知对端
@@ -517,6 +570,10 @@ func _on_resign() -> void:
 func _on_deploy_button() -> void:
 	if session == null:
 		return
+	# 布局阶段禁止部署特种部队（正式开局后才可用）
+	if _deploy_phase:
+		_show_error("布局阶段暂不能部署特种部队")
+		return
 	if _online_mode and session.to_move != NetworkManager.local_color:
 		_show_error("非您的回合")
 		return
@@ -530,6 +587,10 @@ func _on_deploy_button() -> void:
 		_show_status("已取消部署")
 
 func _on_undo() -> void:
+	# 布局阶段禁止悔棋（保持布局进度一致）
+	if _deploy_phase:
+		_show_status("布局阶段暂不支持悔棋")
+		return
 	# 联机模式禁用悔棋（防止状态不一致）
 	if _online_mode:
 		_show_status("联机模式不支持悔棋")
@@ -614,6 +675,20 @@ func _on_cell_clicked(row: int, col: int) -> void:
 	if _online_mode and session.to_move != NetworkManager.local_color:
 		_show_error("非您的回合")
 		return
+	# 布局阶段：双方轮流在己方领土各布 2 子（己方地盘=己方领土，不含边境线）
+	if _deploy_phase:
+		var mover: int = session.to_move
+		if Const.zone_of_row(row) != Const.own_zone(mover):
+			_show_error("布局阶段只能在己方领土落子")
+			return
+		var out: Dictionary
+		if _online_mode:
+			out = NetSync.local_play_move(row, col)
+		else:
+			out = session.play_move(mover, row, col)
+		if not out.ok:
+			_show_error(out.reason)
+		return
 	if _deploy_mode:
 		if _online_mode:
 			# 联机部署：通过 NetSync 路由
@@ -690,13 +765,26 @@ func _on_move_committed(outcome: Dictionary) -> void:
 		# 部署特种部队：用部署特效（己方视角下在位置画，对方视角下画在棋盘中心避免泄露）
 		EffectsPlayer.play_special_deploy(mover_color, outcome.placed)
 	elif outcome.placed is Vector2i and outcome.placed.x >= 0 and not outcome.bounced:
-		EffectsPlayer.play_move(outcome.placed, mover_color)
+		# 布局阶段落子用专属青绿脉冲特效 + 清脆音效（与正式落子区分）
+		if _deploy_phase:
+			EffectsPlayer.play_deploy_place(outcome.placed, mover_color)
+		else:
+			EffectsPlayer.play_move(outcome.placed, mover_color)
 	for r in outcome.get("revealed", []):
 		EffectsPlayer.play_reveal(r.pos, r.get("revealed_reason", ""))
 	# 围空/围困变化检测 → 触发特效
 	_detect_and_trigger_territory_siege()
 	_update_status()
 	_update_controls()
+	# 布局阶段：统计布子进度，双方各布满 2 子 → 正式开局（延迟到本帧结束后执行）
+	if _deploy_phase and not is_undo and not is_overlap_fail:
+		var deploy_mover: int = outcome.get("mover_color", session.to_move)
+		_deploy_stones[deploy_mover] = int(_deploy_stones.get(deploy_mover, 0)) + 1
+		_push_deploy_to_panels()
+		if int(_deploy_stones.get(Const.BLACK, 0)) >= DEPLOY_STONES_PER_SIDE \
+				and int(_deploy_stones.get(Const.WHITE, 0)) >= DEPLOY_STONES_PER_SIDE:
+			call_deferred("_begin_playing")
+			return
 	# 计时器切换到新行棋方
 	# overlap_fail 未成手（不切回合），跳过计时器切换
 	if _timer != null and not session.game_over and not is_overlap_fail:
@@ -946,8 +1034,60 @@ func _maybe_trigger_ai() -> void:
 	_ai_thinking = true
 	# AI 思考状态显示在对应得分板
 	_set_ai_thinking(true)
+	# 布局阶段：AI 走独立部署流程（在己方领土布子）
+	if _deploy_phase:
+		call_deferred("_ai_deploy_play")
+		return
 	# 异步触发，让 UI 先刷新一帧并显示"思考中"
 	call_deferred("_ai_play")
+
+# 布局阶段 AI 布子：延迟一拍后选择己方领土空点落子
+func _ai_deploy_play() -> void:
+	if _ai == null or session == null or session.game_over:
+		_ai_thinking = false
+		_set_ai_thinking(false)
+		return
+	if not _deploy_phase or session.to_move != _ai_color:
+		_ai_thinking = false
+		_set_ai_thinking(false)
+		return
+	# 短暂停顿，让玩家看清轮次切换
+	await get_tree().create_timer(0.4).timeout
+	if _ai == null or session == null or session.game_over:
+		_ai_thinking = false
+		_set_ai_thinking(false)
+		return
+	if not _deploy_phase or session.to_move != _ai_color:
+		_ai_thinking = false
+		_set_ai_thinking(false)
+		return
+	var pos: Vector2i = _ai_deploy_choose(_ai_color)
+	var out: Dictionary = session.play_move(_ai_color, pos.y, pos.x)
+	_ai_thinking = false
+	_set_ai_thinking(false)
+	if not out.ok:
+		# 理论不会发生（偏好点均为己方领土空点）；重试防极端局面
+		Log.w("AI 布局落子非法: %s" % out.get("reason", ""))
+		_maybe_trigger_ai()
+
+# 布局阶段 AI 布子点选择：优先偏好点（己方领土中腹/星位），占满后随机空点兜底
+func _ai_deploy_choose(color: int) -> Vector2i:
+	var prefs: Array = DEPLOY_PREF_WHITE if color == Const.WHITE else DEPLOY_PREF_BLACK
+	for p in prefs:
+		if session != null and session.board.get_at(p.y, p.x) == Const.EMPTY:
+			return p
+	# 兜底：己方领土内随机空点
+	var empties: Array = []
+	if session != null:
+		for r in Const.BOARD_SIZE:
+			if Const.zone_of_row(r) != Const.own_zone(color):
+				continue
+			for c in Const.BOARD_SIZE:
+				if session.board.get_at(r, c) == Const.EMPTY:
+					empties.append(Vector2i(c, r))
+	if not empties.is_empty():
+		return empties[randi() % empties.size()]
+	return Vector2i(9, 9)  # 极端兜底（己方领土已满，理论不可达）
 
 # 统一设置 AI 思考状态（同步更新得分板提示）
 func _set_ai_thinking(t: bool) -> void:
@@ -1052,6 +1192,8 @@ func _effect_duration(effect_id: String) -> float:
 			return 0.7
 		"move":
 			return 0.4
+		"deploy_place":
+			return 0.5
 		"special_deploy":
 			return 0.7
 		"reveal":
@@ -1110,12 +1252,45 @@ func _show_error(msg: String) -> void:
 			lbl.visible = false
 
 func _update_controls() -> void:
-	control_panel.update_state(session, _deploy_mode)
+	control_panel.update_state(session, _deploy_mode, _deploy_phase)
 	# 同步部署模式状态到双方得分板（按钮文字/可用性随之更新）
 	if black_score_panel != null:
 		black_score_panel.update_deploy_state(_deploy_mode)
 	if white_score_panel != null:
 		white_score_panel.update_deploy_state(_deploy_mode)
+
+# ===== 布局阶段 =====
+
+# 推送布局阶段状态到双方得分板（倒计时条显示在各自得分板模块0计时条位置）
+func _push_deploy_to_panels() -> void:
+	if black_score_panel != null and black_score_panel.has_method("set_deploy_state"):
+		black_score_panel.set_deploy_state(
+			_deploy_phase, _deploy_time_left,
+			int(_deploy_stones.get(Const.BLACK, 0)), DEPLOY_STONES_PER_SIDE)
+	if white_score_panel != null and white_score_panel.has_method("set_deploy_state"):
+		white_score_panel.set_deploy_state(
+			_deploy_phase, _deploy_time_left,
+			int(_deploy_stones.get(Const.WHITE, 0)), DEPLOY_STONES_PER_SIDE)
+
+# 布局完成/超时 → 正式开局：
+#   关闭布局氛围（领土辉光/前线封条）→ 棋盘中央圆形扩散波浪 + 开局号角 → 重启思考时间计时
+func _begin_playing() -> void:
+	if not _deploy_phase:
+		return
+	_deploy_phase = false
+	_push_deploy_to_panels()
+	if board_view != null:
+		board_view.set_deploy_phase(false)
+		# 正式开局动画：棋盘方格圆形扩散波浪（从棋盘中央向四周扩散，持续 1.7 秒）
+		board_view.play_opening_circular_wave()
+	# 重启思考时间计时（布局期间已暂停）
+	if _timer != null and session != null:
+		_timer.resume()
+		_timer.switch_to(session.to_move)
+	# 开局号角音效
+	EffectsPlayer.play_sound("game_open")
+	_update_controls()
+	Log.i("布局完成，正式开局（ply=%d）" % (session.ply if session != null else -1))
 
 # ===== 键盘快捷键 =====
 func _unhandled_input(event: InputEvent) -> void:
@@ -1323,6 +1498,9 @@ func _reinit_timer() -> void:
 	_timer.time_changed.connect(_on_time_changed)
 	if session != null:
 		_timer.switch_to(session.to_move)
+	# 布局阶段暂停思考时间计时（布局使用独立 2 分钟倒计时）
+	if _deploy_phase:
+		_timer.pause()
 	# 重新注入得分板
 	if black_score_panel != null:
 		black_score_panel.set_timer(_timer)

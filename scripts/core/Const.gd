@@ -14,7 +14,7 @@ const EMPTY: int = 0
 const BLACK: int = 1
 const WHITE: int = 2
 
-const KOMI_DEFAULT: float = 3.5    # 黑方贴目（评估推荐值）
+const KOMI_DEFAULT: float = 0.5    # 黑方贴目（默认值）
 
 # 领土分区枚举
 enum Zone { BLACK, BORDER, WHITE }

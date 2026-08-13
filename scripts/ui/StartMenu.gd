@@ -51,7 +51,7 @@ var _selected_time_idx: int = 0  # 思考时间选项索引
 var _selected_piece_idx: int = 1  # 兵力上限选项索引（默认 112）
 var _items: Array = []  # 模式列表项节点
 var _time_items: Array = []  # 思考时间列表项节点
-var _komi_value: float = Const.KOMI_DEFAULT  # 当前贴目（默认 3.5）
+var _komi_value: float = Const.KOMI_DEFAULT  # 当前贴目（默认 0.5）
 var _komi_label: Label = null  # 贴目显示标签
 var _piece_option: OptionButton = null  # 兵力下拉
 
@@ -150,7 +150,7 @@ func _build_ui() -> void:
 	settings_row.size_flags_horizontal = SIZE_SHRINK_CENTER
 	root.add_child(settings_row)
 
-	# 贴目加减步进器：[−] 3.5 目 [+]
+	# 贴目加减步进器：[−] 0.5 目 [+]
 	var komi_col := VBoxContainer.new()
 	komi_col.add_theme_constant_override("separation", 4)
 	komi_col.size_flags_horizontal = SIZE_SHRINK_CENTER

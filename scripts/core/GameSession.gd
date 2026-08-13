@@ -31,6 +31,7 @@ var pending_ko_at_endgame: Vector2i = GoRules.NO_KO
 var _cached_scores: Dictionary = {}
 var _cached_enclosures: Array = []
 var _cached_sieged_groups: Array = []
+var _cached_outsides: Dictionary = {}  # color -> 外部集合 idx set（角部/边缘包围判定复用）
 var _cache_valid: bool = false
 var _use_cache: bool = true  # AI clone 的 session 设为 false
 # 悔棋历史栈：每次成功行棋前快照盘面与状态，undo() 弹栈恢复
@@ -75,6 +76,7 @@ func _invalidate_cache() -> void:
 	_cached_scores = {}
 	_cached_enclosures = []
 	_cached_sieged_groups = []
+	_cached_outsides = {}
 
 # 重建缓存
 func _ensure_cache() -> void:
@@ -82,10 +84,16 @@ func _ensure_cache() -> void:
 		return
 	if _cache_valid:
 		return
+	# 外部集合每色各算一次（角部/边缘包围圈判定用，同盘面所有组群复用）
+	_cached_outsides = {
+		Const.BLACK: SiegeDetector.compute_outside(board, Const.BLACK),
+		Const.WHITE: SiegeDetector.compute_outside(board, Const.WHITE),
+	}
 	# 先计算围困组群和围空（各一次遍历），供 ScoreCalculator 和缓存复用（避免重复遍历）
 	_cached_sieged_groups = []
 	for g in board.all_groups():
-		if SiegeDetector.is_sieged(board, g):
+		var g_out: Dictionary = _cached_outsides.get(Const.opponent(g.color), {})
+		if SiegeDetector.is_sieged(board, g, g_out):
 			_cached_sieged_groups.append(g)
 	_cached_enclosures = TerritoryDetector.enclosures(board)
 	_cached_scores = ScoreCalculator.compute(board, counters, _cached_sieged_groups, _cached_enclosures)
@@ -110,10 +118,14 @@ func cached_sieged_groups() -> Array:
 	if _use_cache:
 		_ensure_cache()
 		return _cached_sieged_groups
-	# 非缓存模式：独立判定
+	# 非缓存模式：独立判定（外部集合每色算一次复用）
 	var result: Array = []
+	var outs: Dictionary = {
+		Const.BLACK: SiegeDetector.compute_outside(board, Const.BLACK),
+		Const.WHITE: SiegeDetector.compute_outside(board, Const.WHITE),
+	}
 	for g in board.all_groups():
-		if SiegeDetector.is_sieged(board, g):
+		if SiegeDetector.is_sieged(board, g, outs.get(Const.opponent(g.color), {})):
 			result.append(g)
 	return result
 

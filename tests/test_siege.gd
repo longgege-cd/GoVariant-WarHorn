@@ -115,3 +115,29 @@ func run(t: TestFramework) -> void:
 	g = b.group_at(0, 0)
 	# 内部 1 空点(1,1) → legal空点=0（自杀禁着）< 4 → 围困
 	t.expect(SiegeDetector.is_sieged(b, g), "1点小眼空间<4合法空点→围困")
+
+	# 7. 角部包围：组群唯一气是角部边缘空点(0,0) → 应被包围/围困
+	# 白(0,1)(1,0)(1,1) 被黑(0,2)(1,2)(2,0)(2,1)(2,2) 完全封闭
+	# 唯一气 = 角部(0,0)（边缘空点），旧算法误判"触及边缘→不被包围"
+	b = BoardModel.new()
+	b.set_at(0, 1, Const.WHITE); b.set_at(1, 0, Const.WHITE); b.set_at(1, 1, Const.WHITE)
+	b.set_at(0, 2, Const.BLACK); b.set_at(1, 2, Const.BLACK); b.set_at(2, 2, Const.BLACK)
+	b.set_at(2, 0, Const.BLACK); b.set_at(2, 1, Const.BLACK)
+	g = b.group_at(0, 1)
+	t.expect(SiegeDetector._is_surrounded_by_opponent(b, g), "角部白子唯一气(0,0)被黑+边缘封闭→被包围")
+	t.expect(SiegeDetector.is_sieged(b, g), "角部白子被围且空点<4→围困")
+
+	# 7b. 角部圈内含 2 个相邻边缘空点：白(1,1) 唯一气(0,1) 也在边缘
+	b = BoardModel.new()
+	b.set_at(1, 1, Const.WHITE)
+	b.set_at(1, 0, Const.BLACK); b.set_at(0, 2, Const.BLACK); b.set_at(1, 2, Const.BLACK)
+	b.set_at(2, 0, Const.BLACK); b.set_at(2, 1, Const.BLACK); b.set_at(2, 2, Const.BLACK)
+	g = b.group_at(1, 1)
+	t.expect(SiegeDetector.is_sieged(b, g), "角部白子唯一气(0,1)贴边被封闭→围困")
+
+	# 8. 角部贴边但未被封闭 → 活棋（气域触及真外部）
+	b = BoardModel.new()
+	b.set_at(0, 0, Const.WHITE)
+	b.set_at(1, 1, Const.BLACK)
+	g = b.group_at(0, 0)
+	t.expect(not SiegeDetector.is_sieged(b, g), "角部白子气域(0,1)(1,0)连通外部→活棋")

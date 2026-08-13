@@ -61,9 +61,9 @@ static func has_two_true_eyes(board: BoardModel, group: Dictionary) -> bool:
 #   优先级2：被包围但合法空点≥4 → 活棋（短路：找到4个即返回）
 #   优先级3：两眼 → 活棋（最贵：每个气域空点clone棋盘，最后检查）
 #   以上都不满足 → 围困
-static func is_alive(board: BoardModel, group: Dictionary) -> bool:
+static func is_alive(board: BoardModel, group: Dictionary, outside: Dictionary = {}) -> bool:
 	# 优先级1：未被包围（大多数组群在此返回，跳过昂贵的两眼判定）
-	if not _is_surrounded_by_opponent(board, group):
+	if not _is_surrounded_by_opponent(board, group, outside):
 		return true
 	# 优先级2：被包围但合法空点≥4（短路，快速返回）
 	if count_legal_empty_points(board, group, 4) >= 4:
@@ -76,8 +76,9 @@ static func is_alive(board: BoardModel, group: Dictionary) -> bool:
 # 围困判定（v4.1规则）
 # 围困 = 被包围 + 无两眼 + 圈内可合法落子的空点 < 4
 # 等价于 not is_alive
-static func is_sieged(board: BoardModel, group: Dictionary) -> bool:
-	return not is_alive(board, group)
+# outside: 对方墙的外部集合（缓存模式由调用方传入复用，避免每个组群重复全盘计算）
+static func is_sieged(board: BoardModel, group: Dictionary, outside: Dictionary = {}) -> bool:
+	return not is_alive(board, group, outside)
 
 # 统计圈内可合法落子的空点数（规则6.5）
 # "圈内" = 被对手方棋子封闭的区域内的所有空点
@@ -228,24 +229,28 @@ static func _group_liberty_count_excluding(board: BoardModel, g: Dictionary, row
 
 # 检查组群是否被对方包围（v5.3纯几何判定）
 # 规则6.3条件1："被包围：处于对方的封闭包围圈内（纯几何判定）"
-# 算法：组群气域 R 出发 flooding（穿过空点+己方棋子，仅被对方棋子阻挡）
-#   若 R 到达棋盘边缘空点 → 与外部连通 → 不被包围
-#   若 R 无法到达边缘空点 → 被对方棋子完全封闭 → 被包围
-# 这正确处理：
-#   - 大气域（覆盖大部分棋盘）→ R 触及边缘 → 不被包围
-#   - 包围圈内组群 → R 被对方棋子封闭 → 被包围
-#   - 角落组群被对方包围 → R 无路径到边缘空点 → 被包围
-#   - 通过己方棋子链连接到外部 → flooding 穿过己方棋子可达 → 不被包围
-# 性能优化：从组群气域反向 flooding 比从棋盘边缘正向 flooding 局部性好
-#   （未被包围组群气域大，很快触及边缘提前返回；被包围组群只遍历封闭小区域）
-static func _is_surrounded_by_opponent(board: BoardModel, group: Dictionary) -> bool:
+# 规则4.1："棋盘边界作为天然围墙参与包围" → 角部/边缘包围圈内可含边缘空点
+#   （如角部两颗棋子与两条边封闭的区域内的 (0,0)），这些边缘空点不是「外部」。
+# 外部定义（与 TerritoryDetector 一致）：以对方棋子为墙，含最多边缘点的非墙连通分量。
+# 算法：
+#   1. 计算对方墙的外部集合 O
+#   2. 组群气域 R 反向 flooding（穿过空点+己方棋子，仅被对方棋子阻挡）
+#   3. R 触及 O 中空点 → 与外部连通 → 不被包围（早退）
+#   4. R 无法触及 O → 被对方棋子完全封闭 → 被包围
+# 性能：多数未被包围组群的气域很快触及外部空点早退；被包围组群只遍历封闭小区域
+static func _is_surrounded_by_opponent(board: BoardModel, group: Dictionary, outside: Dictionary = {}) -> bool:
 	var stones: Array = group.stones
 	var color: int = group.color
 	var opp: int = Const.opponent(color)
 	var size: int = board.size
 
-	# 气域/连通域：从组群棋子出发，穿过空点+己方棋子，被对方棋子阻挡
-	# 起点 = 组群棋子的非对方邻居（空点或己方棋子）
+	# 对方墙的外部集合（含最多边缘点的非墙连通分量）
+	# 调用方可复用同盘面的外部集合（避免每个组群重复全盘计算）
+	var outside_set: Dictionary = outside
+	if outside_set.is_empty():
+		outside_set = compute_outside(board, opp)
+
+	# 反向 flooding：组群气域（穿过空点+己方棋子，被对方棋子阻挡）
 	var region: Dictionary = {}  # idx -> true（己方棋子+空点，与对方隔绝的区域）
 	var stack: Array = []
 	for s in stones:
@@ -259,10 +264,9 @@ static func _is_surrounded_by_opponent(board: BoardModel, group: Dictionary) -> 
 				stack.append([n[0], n[1], v])
 	while stack.size() > 0:
 		var p = stack.pop_back()
-		if p[2] == Const.EMPTY:
-			# 空点到达棋盘边缘 → 与外部连通 → 不被包围
-			if p[0] == 0 or p[0] == size - 1 or p[1] == 0 or p[1] == size - 1:
-				return false
+		if p[2] == Const.EMPTY and outside_set.has(p[0] * size + p[1]):
+			# 气域触及外部开放空点 → 与外部连通 → 不被包围（早退）
+			return false
 		# 穿过空点和己方棋子继续扩散（仅被对方棋子阻挡）
 		for n in board.neighbors(p[0], p[1]):
 			var v: int = board.get_at(n[0], n[1])
@@ -274,6 +278,57 @@ static func _is_surrounded_by_opponent(board: BoardModel, group: Dictionary) -> 
 				stack.append([n[0], n[1], v])
 	# 气域与外部不连通 → 被对方棋子完全封闭
 	return true
+
+# 计算以 wall_color 棋子为墙时的「外部」连通分量
+# 「外部」= 含最多边缘点的非墙连通分量（空点+非墙色棋子可穿过）
+# 规则4.1：棋盘边缘是天然围墙，角部被封闭的小区域（如(0,0)）只含1~2个边缘点，
+# 而开放大气含大量边缘点 → 通过「含最多边缘点」区分内部与外部
+static func compute_outside(board: BoardModel, wall_color: int) -> Dictionary:
+	var size: int = board.size
+	var visited: Dictionary = {}
+	var best: Dictionary = {}
+	var best_edge: int = -1
+	for r in range(size):
+		for c in range(size):
+			var idx: int = r * size + c
+			if visited.has(idx):
+				continue
+			if board.get_at(r, c) == wall_color:
+				continue
+			var comp: Dictionary = {}
+			var stack: Array = [idx]
+			var edge: int = 0
+			while stack.size() > 0:
+				var cur: int = stack.pop_back()
+				if comp.has(cur) or visited.has(cur):
+					continue
+				visited[cur] = true
+				comp[cur] = true
+				var cr: int = cur / size
+				var cc: int = cur % size
+				if cr == 0 or cr == size - 1 or cc == 0 or cc == size - 1:
+					edge += 1
+				# 内联 4 方向邻居（避免 neighbors() 每次建数组）
+				if cr > 0:
+					var ni0: int = cur - size
+					if not visited.has(ni0) and board.get_at(cr - 1, cc) != wall_color:
+						stack.append(ni0)
+				if cr < size - 1:
+					var ni1: int = cur + size
+					if not visited.has(ni1) and board.get_at(cr + 1, cc) != wall_color:
+						stack.append(ni1)
+				if cc > 0:
+					var ni2: int = cur - 1
+					if not visited.has(ni2) and board.get_at(cr, cc - 1) != wall_color:
+						stack.append(ni2)
+				if cc < size - 1:
+					var ni3: int = cur + 1
+					if not visited.has(ni3) and board.get_at(cr, cc + 1) != wall_color:
+						stack.append(ni3)
+			if edge > best_edge:
+				best_edge = edge
+				best = comp
+	return best
 
 # 真眼判定（规则6.4：模拟提吃）
 # 独立真眼 = 空点 + 四周被同块棋子(或棋盘边界)包围 + 对方不能落子(禁入点) + 该组不能通过填眼提吃对方

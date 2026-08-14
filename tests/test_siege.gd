@@ -18,31 +18,27 @@ func run(t: TestFramework) -> void:
 	g = b.group_at(5, 5)
 	t.expect(SiegeDetector.is_sieged(b, g), "黑单子被白四面包围无眼→围困")
 
-	# 3. 黑两真眼活棋 → 不围困
-	# 构造：黑组群有 2 个独立真眼，外围被白包围
+	# 3. 黑两真眼活棋 → 不围困（真场景：被白完全包围 + 黑做出两个独立真眼）
+	# 黑组群 rows 6-8 / cols 1-7（17子），眼位 (7,2) 与 (7,6) 被黑四邻围死
+	# 白墙 row5/row9/col0/col8 完全封闭，黑组群全部气 = 两个眼位
 	b = BoardModel.new()
-	# 经典两眼形：黑占一圈围出两个独立空点
-	# 简化构造 7 子形：
-	#   . B .        (0,1)空眼? 不对，需黑围
-	# 用 5x5 区域：黑围出 (1,1) 和 (1,3) 两个独立眼
-	# 黑子：(0,0)(0,1)(0,2)(0,3)(0,4)(1,0)(1,4)(2,0)(2,2)(2,4)(3,0)(3,1)(3,2)(3,3)(3,4)
-	# 空眼 (1,1)(1,2)(1,3)? 那是连通的 3 空点，不是 2 眼
-	# 改：两个独立单点眼
-	# 黑子布局（中心两眼形）：
-	#  B B B B B
-	#  B . B . B
-	#  B B B B B
-	# 空点 (1,1) 和 (1,3)，被黑分隔
-	var black_stones := [
-		[0,0],[0,1],[0,2],[0,3],[0,4],
-		[1,0],[1,2],[1,4],
-		[2,0],[2,1],[2,2],[2,3],[2,4],
-	]
-	for s in black_stones:
-		b.set_at(s[0], s[1], Const.BLACK)
-	g = b.group_at(1, 0)  # 黑组群（应连通）
-	t.expect_eq(g.stones.size(), 13, "黑两眼形 13 子连通")
-	t.expect(not SiegeDetector.is_sieged(b, g), "两真眼活棋不围困")
+	for r in range(6, 9):
+		for c in range(1, 8):
+			if r == 7 and (c == 2 or c == 6):
+				continue  # 眼位留空
+			b.set_at(r, c, Const.BLACK)
+	for c in range(0, 9):
+		b.set_at(5, c, Const.WHITE)
+		b.set_at(9, c, Const.WHITE)
+	for r in range(5, 10):
+		b.set_at(r, 0, Const.WHITE)
+		b.set_at(r, 8, Const.WHITE)
+	g = b.group_at(6, 1)
+	t.expect_eq(g.stones.size(), 19, "两真眼黑组群 19 子连通")
+	# 场景构造验证：确实被白完全包围、确实做出两个真眼
+	t.expect(SiegeDetector._is_surrounded_by_opponent(b, g), "两真眼黑组群被白完全包围")
+	t.expect(SiegeDetector.has_two_true_eyes(b, g), "黑组群做出两个独立真眼")
+	t.expect(not SiegeDetector.is_sieged(b, g), "被包围但两真眼活棋不围困")
 
 	# 4. 黑子被白包围，1 眼 → 围困
 	b = BoardModel.new()
@@ -141,3 +137,36 @@ func run(t: TestFramework) -> void:
 	b.set_at(1, 1, Const.BLACK)
 	g = b.group_at(0, 0)
 	t.expect(not SiegeDetector.is_sieged(b, g), "角部白子气域(0,1)(1,0)连通外部→活棋")
+
+	# 9. 圈内合法落子点：提吃点计入（黑落(1,1)提白后存活）
+	# 黑 7 子环 + 白(0,1) 嵌环上围 (1,1)，环外白墙封死 → 黑白均唯一气 (1,1)
+	b = BoardModel.new()
+	var black_ring := [[0,0],[0,2],[1,0],[1,2],[2,0],[2,1],[2,2]]
+	for s in black_ring:
+		b.set_at(s[0], s[1], Const.BLACK)
+	b.set_at(0, 1, Const.WHITE)
+	for c in range(3):
+		b.set_at(3, c, Const.WHITE)
+	for r in range(3):
+		b.set_at(r, 3, Const.WHITE)
+	g = b.group_at(0, 0)
+	# (1,1) 填黑可提白(0,1)后存活 → 合法 → count=1（可提吃点计入）
+	t.expect(SiegeDetector._is_legal_move(b, 1, 1, Const.BLACK), "9: 提吃后存活→可合法落子")
+	t.expect_eq(SiegeDetector.count_legal_empty_points(b, g), 1, "9: 圈内可提吃点计入 count=1")
+
+	# 10. 多个对方组群同时被提 → 落子合法
+	# 落子点(1,1) 四邻 (0,1)(1,0)(1,2)(2,1) 为 4 个独立白子，各自唯一气=(1,1)
+	b = BoardModel.new()
+	for p in [[0,1],[1,0],[1,2],[2,1]]:
+		b.set_at(p[0], p[1], Const.WHITE)
+	for s in [[0,0],[0,2],[0,3],[1,3],[2,3],[2,2],[2,0],[3,1],[3,0],[3,2]]:
+		b.set_at(s[0], s[1], Const.BLACK)
+	# 4 个白子各自唯一气 (1,1)，黑落 (1,1) 同时提 4 子
+	t.expect(SiegeDetector._is_legal_move(b, 1, 1, Const.BLACK), "10: 黑落(1,1)同时提4白子→合法")
+
+	# 11. 对方组群有外气 → 落子自杀非法（禁入点）
+	# 落子点(1,1) 四邻全白且白各有外气 → 黑落 (1,1) 无气且不能提 → 非法
+	b = BoardModel.new()
+	for p in [[0,1],[1,0],[1,2],[2,1]]:
+		b.set_at(p[0], p[1], Const.WHITE)
+	t.expect(not SiegeDetector._is_legal_move(b, 1, 1, Const.BLACK), "11: 四白包围白有外气→自杀非法")

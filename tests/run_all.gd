@@ -65,6 +65,10 @@ func _init() -> void:
 	var tutorial_tests := preload("res://tests/test_tutorial.gd").new()
 	tutorial_tests.run(t)
 
+	# 棋谱规则审计（轻量版：每局终局全局面检查；完整版独立运行 tests/diag_sgf_audit.gd）
+	const SgfAudit = preload("res://tests/diag_sgf_audit.gd")
+	SgfAudit.run_quick(t)
+
 	# 汇总
 	_p("")
 	_p("========== 测试结果 ==========")

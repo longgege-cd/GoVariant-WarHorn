@@ -173,6 +173,8 @@ func run(t: TestFramework) -> void:
 	var p1 = s.do_pass(Const.BLACK)
 	t.expect(p1.ok, "PASS1: 黑第1次虚手成功")
 	t.expect_eq(s.to_move, Const.WHITE, "PASS1: 虚手后轮到白")
+	t.expect_eq(p1.mover_color, Const.BLACK, "PASS1: 虚手 outcome 记录行棋方为黑（日志颜色修正回归）")
+	t.expect_eq(p1.placed, Vector2i(-1, -1), "PASS1: 虚手 placed=(-1,-1)")
 	# 连续虚手守卫：轮次交替下同一方天然不会连续两回合，这里直接构造状态验证守卫逻辑
 	s.last_pass_color = Const.BLACK
 	s.to_move = Const.BLACK

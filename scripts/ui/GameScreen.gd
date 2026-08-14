@@ -542,6 +542,10 @@ func _on_pass() -> void:
 		if not out.ok:
 			_show_error(out.reason)
 		return
+	# PvE：仅玩家回合可虚手（否则会替 AI 虚手，可能造成"单方连续虚手"误判与误触终局）
+	if _pve_mode and session.to_move != Const.BLACK:
+		_show_error("非您的回合")
+		return
 	var out: Dictionary = session.do_pass(session.to_move)
 	if not out.ok:
 		_show_error(out.reason)

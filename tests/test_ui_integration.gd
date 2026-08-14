@@ -62,6 +62,13 @@ func _run_tests() -> void:
 	await get_tree().process_frame
 	t.expect_eq(screen.session.ply, 3, "黑虚手后 ply=3")
 	t.expect_eq(screen.session.consecutive_passes, 1, "连续虚手 1")
+	# 回归：虚手曾因 outcome.mover_color 缺失被日志记成对方颜色（黑虚手显示为白）
+	if screen._log_entries.size() > 0:
+		var pass_entry: Dictionary = screen._log_entries[-1]
+		t.expect_eq(pass_entry.get("color", -1), Const.BLACK, "黑虚手日志颜色=黑（回归修正）")
+		t.expect(pass_entry.get("passed", false), "黑虚手日志 passed=true")
+	else:
+		t.expect(false, "黑虚手后存在日志条目")
 	screen._on_pass()
 	await get_tree().process_frame
 	t.expect_eq(screen.session.consecutive_passes, 2, "连续虚手 2")
@@ -160,6 +167,23 @@ func _run_tests() -> void:
 	t.expect(not screen._ai_thinking, "AI 思考结束")
 	t.expect(screen.session.ply >= 2, "AI 已应手 ply>=2")
 	t.expect_eq(screen.session.to_move, Const.BLACK, "AI 行棋后轮到玩家")
+
+	# 11b. PvE 虚手限制：玩家虚手后 AI 回合，玩家再虚手应被拒（不可替 AI 虚手）
+	var pve_pass_ply: int = screen.session.ply
+	screen._on_pass()
+	await get_tree().process_frame
+	t.expect_eq(screen.session.consecutive_passes, 1, "PvE 玩家虚手成功")
+	t.expect_eq(screen.session.to_move, Const.WHITE, "PvE 虚手后轮到 AI")
+	t.expect_eq(screen.session.ply, pve_pass_ply + 1, "PvE 虚手后 ply+1")
+	screen._on_pass()
+	t.expect_eq(screen.session.consecutive_passes, 1, "PvE AI 回合玩家虚手被拒（连续计数不变）")
+	t.expect(not screen.session.game_over, "PvE 未被玩家二次虚手误触终局")
+	# 等 AI 应对（避免残留异步 AI 任务影响后续测试节）
+	var w_ai: int = 0
+	while screen._ai_thinking and w_ai < 120:
+		await get_tree().process_frame
+		w_ai += 1
+	await get_tree().process_frame
 
 	# ===== 12. PvE 连续多手对局不卡死 =====
 	var ply_before: int = screen.session.ply

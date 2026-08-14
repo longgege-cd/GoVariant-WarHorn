@@ -442,3 +442,11 @@
 - 改动：**每方每局虚手限 2 次**，**同一方不可连续虚手**（对方落子后己方恢复虚手权）。双方连续虚手仍照常触发终局（自动终局保留）。回放/审计旧棋谱时通过 `skip_pass_limits` 绕过（旧规则无此限制，旧棋谱不因此失效）
 - 代码（`GameSession.gd`）：新增 `PASS_LIMIT=2`、`pass_counts`（每方虚手计数）、`last_pass_color`（上一手虚手方，实际落子/部署/弹子后重置）；`do_pass` 在次数用尽（"虚手次数已用尽"）或连续虚手（"不可连续虚手"）时拒绝；快照/悔棋/clone 同步新状态
 - 测试：`test_signals.gd` 新增 PASS1–PASS11（上限/连续守卫/对方落子后恢复/终局保留/悔棋恢复/clone 同步/skip 绕过）；主测试 + UI 集成 + 联机全量回归
+
+**版本改动记录（2026-08-15 虚手日志颜色/单方连续虚手修复）：**
+
+- BUG：对局日志出现"同一方连续虚手"（如 `白@(-1,-1)` 连续两条）。**根因**：`do_pass` 未设置 `outcome.mover_color`，而 `_record_log_entry` 在 `_commit_turn`（`to_move` 已切换为对方）之后读取 `outcome.get("mover_color", session.to_move)` → 黑方虚手被记录成白方；叠加 PvE 模式下玩家可在 AI 回合再按虚手（`_on_pass` 无回合校验）会替 AI 虚手，造成"单方连续虚手"观感并可能误触终局
+- 修复：
+  1. `GameSession.do_pass` 显式设置 `outcome.mover_color = color`（与落子/部署一致），日志/特效按真实行棋方记录
+  2. `GameScreen._on_pass` PvE 模式加回合校验（非玩家回合提示"非您的回合"），玩家不可替 AI 虚手
+- 测试：test_signals PASS1 增断言（outcome.mover_color=黑）；UI 集成第 5 节（黑虚手日志颜色=黑）与 11b（PvE AI 回合虚手被拒、不误触终局）；主测试 991 + UI 128 + 联机 56 全通过

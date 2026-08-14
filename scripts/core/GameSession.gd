@@ -346,6 +346,8 @@ func do_pass(color: int) -> Dictionary:
 	pass_counts[color] = pass_counts.get(color, 0) + 1
 	last_pass_color = color
 	outcome.passed = true
+	outcome.mover_color = color  # 必须显式设置：日志在 _commit_turn（to_move 已切换）后读取，否则会记成对方颜色
+	outcome.placed = Vector2i(-1, -1)
 	# 虚手不产生劫，清除劫点
 	ko_point = GoRules.NO_KO
 	_advance_ply_and_expiry(outcome)

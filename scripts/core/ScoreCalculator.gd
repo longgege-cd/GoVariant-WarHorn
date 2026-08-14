@@ -84,7 +84,7 @@ static func compute(board: BoardModel, counters: Dictionary, precomputed_sieged:
 	# 围困棋子作为围空方形成的包围圈，其围空分全部扣除
 	# 同时（规则6.3嵌套）：无效包围圈的空点归属于对手方(最外层有效包围方)
 	for e in encs:
-		if _is_enclosure_formed_by_sieged(board, e, sieged_stones_set):
+		if is_enclosure_formed_by_sieged(board, e, sieged_stones_set):
 			var enc_color: int = e.color
 			var target: Breakdown = bk if enc_color == Const.BLACK else wt
 			# 扣除围空方的围空分（与第2步加法对应：仅围困棋子位置扣除，活棋位置未加故不扣）
@@ -189,17 +189,17 @@ static func compute_final(board: BoardModel, counters: Dictionary, komi: float, 
 # 规则4.2：包围圈边界棋子任一为围困 → 围空分不计入占领分
 # 规则3.4：被围困的棋子自己形成的包围圈，其围空分全部扣除
 # 条件：围空方颜色的边界棋子中任一属于围困组群 → 包围圈无效，扣除围空分
-# sieged_stones_set: { idx -> color }（围困棋子位置 → 棋子颜色）
-static func _is_enclosure_formed_by_sieged(board: BoardModel, enclosure: Dictionary, sieged_stones_set: Dictionary) -> bool:
+# sieged_stones_set: { idx -> any }（围困棋子位置索引集合；值可为颜色或 true，只判存在性）
+# 公开：供显示层（BoardView 领土填充 / 对局日志）过滤无效包围圈
+static func is_enclosure_formed_by_sieged(board: BoardModel, enclosure: Dictionary, sieged_stones_set: Dictionary) -> bool:
 	var enc_color: int = enclosure.color
 	for idx in enclosure.border_stones_idx:
 		var r: int = idx / board.size
 		var c: int = idx % board.size
-		var stone_color: int = board.get_at(r, c)
-		if stone_color != enc_color:
+		if board.get_at(r, c) != enc_color:
 			continue  # 对方棋子作为边界（两色边界场景），不影响判定
 		# 围空方颜色的边界棋子：若任一为围困 → 包围圈无效
-		if sieged_stones_set.get(idx, -1) == enc_color:
+		if sieged_stones_set.has(idx):
 			return true
 	# 所有围空方边界棋子都非围困 → 包围圈有效
 	return false

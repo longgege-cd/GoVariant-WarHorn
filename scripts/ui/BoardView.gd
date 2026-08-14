@@ -380,7 +380,11 @@ func _draw_centered_text(font: Font, pos: Vector2, text: String, fs: int, color:
 # 围空填充
 func _draw_territory_fills() -> void:
 	var encs: Array = session.cached_enclosures()
+	# 无效包围圈（由围困棋子形成，规则3.4/4.2）不计围空分 → 不填充
+	var sieged_set: Dictionary = _collect_sieged_set()
 	for e in encs:
+		if ScoreCalculator.is_enclosure_formed_by_sieged(session.board, e, sieged_set):
+			continue
 		var color: int = e.color
 		var fill: Color = _theme.black_territory_color if color == Const.BLACK else _theme.white_territory_color
 		fill.a = _theme.territory_fill_alpha
@@ -389,6 +393,16 @@ func _draw_territory_fills() -> void:
 			# 填充一格大小
 			var s: float = _theme.cell_size * 0.5
 			draw_rect(Rect2(pos.x - s, pos.y - s, s * 2, s * 2), fill, true)
+
+# 当前被围困棋子索引集合 {idx -> true}
+func _collect_sieged_set() -> Dictionary:
+	var out: Dictionary = {}
+	if session == null:
+		return out
+	for g in session.cached_sieged_groups():
+		for st in g.stones:
+			out[st.y * Const.BOARD_SIZE + st.x] = true
+	return out
 
 # 棋子
 func _draw_stones() -> void:

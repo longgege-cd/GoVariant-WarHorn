@@ -533,6 +533,17 @@ func run(t: TestFramework) -> void:
 	# (10,10) 行10 白境 → 白围空圈无效 → 嵌套归属黑 +2
 	# 黑围空 = 16 + 2 = 18
 	t.expect_eq(sc.black.occupation_territory, 18, "C4: 黑围空分=18（洞腔内8围困白子×2=16 + 中心归属+2）")
+	# C4b. 无效包围圈判定：白方框围困 → 其围成的包围圈应判为无效（规则3.4/4.2，供显示层过滤）
+	var sset4: Dictionary = {}
+	for g4 in s.cached_sieged_groups():
+		for st4 in g4.stones:
+			sset4[st4.y * 19 + st4.x] = true
+	var white_enc_found := false
+	for e4 in TerritoryDetector.enclosures(s.board):
+		if e4.color == Const.WHITE and e4.points.size() == 1:
+			white_enc_found = true
+			t.expect(ScoreCalculator.is_enclosure_formed_by_sieged(s.board, e4, sset4), "C4b: 白方框围成的包围圈判定为无效")
+	t.expect(white_enc_found, "C4b: 找到白方框围空圈（中心1点）")
 	# 黑围困分：is_defense_zone(row, BLACK): 行9边境→true；行10-11白境→false
 	# 行9(3子) → +1 each = 3；行10-11(5子) → 0
 	t.expect_eq(sc.black.defense_siege, 3, "C4: 黑围困分=3（白方框行9的3子在边境）")

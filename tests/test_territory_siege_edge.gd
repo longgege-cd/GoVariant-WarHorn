@@ -571,3 +571,91 @@ func run(t: TestFramework) -> void:
 	#   行10 白境 → true → +2×3=6
 	# 黑围空分 = 6 + 6 = 12
 	t.expect_eq(sc.black.occupation_territory, 12, "C6: 纯空点围空分=6攻击区空点×2=12（行8黑境不计）")
+
+	# C7. 中央嵌套包围：黑实心墙围白方框，白方框围 1 空点于边境 → 白方框围困，中心归属黑
+	# 黑外墙 row5-13×col5-13 + 内部填充黑，仅中央 3x3（row8-10 col8-10）留白方框
+	# 白方框 8 子围 (9,9)（行9 边境），白方框唯一气=(9,9)，legal空点<4 → 围困
+	s = GameSession.new()
+	for c in range(5, 14):
+		s.board.set_at(5, c, Const.BLACK)
+		s.board.set_at(13, c, Const.BLACK)
+	for r in range(6, 13):
+		s.board.set_at(r, 5, Const.BLACK)
+		s.board.set_at(r, 13, Const.BLACK)
+	for r in range(6, 13):
+		for c in range(6, 13):
+			if r >= 8 and r <= 10 and c >= 8 and c <= 10:
+				continue
+			s.board.set_at(r, c, Const.BLACK)
+	for r in range(8, 11):
+		for c in range(8, 11):
+			if r == 9 and c == 9:
+				continue
+			s.board.set_at(r, c, Const.WHITE)
+	s.board.set_at(0, 0, Const.WHITE)
+	var wg_c7 = s.board.group_at(8, 8)
+	t.expect(SiegeDetector.is_sieged(s.board, wg_c7), "C7: 中央白方框被黑实心墙围困")
+	sc = s.scores()
+	# 白方框围 (9,9) → 白围空圈 points=1，但白方框围困 → 包围圈无效 → (9,9) 归属黑
+	# (9,9) 行9 边境 → is_attack_zone(9, BLACK)=true → 黑围空 +2
+	t.expect_eq(sc.black.occupation_territory, 2, "C7: 中央嵌套归属——白围困圈中心(9,9)归属黑 +2")
+	# 白方框 8 子围困分：行8(黑境3子)+行9(边境2子)=5，行10(白境3子)不计
+	t.expect_eq(sc.black.defense_siege, 5, "C7: 中央白方框围困分=5（行8黑境3+行9边境2）")
+	# 白方框围困 → 不计活子分；远处 (0,0) 行0黑境 → is_attack_zone(0, WHITE)=true → +1
+	t.expect_eq(sc.white.occupation_live, 1, "C7: 白活子分=1（围困扣除，仅远处）")
+
+	# C8. 角部嵌套包围：黑实心墙贴右下角（白境），内层白方框围 1 点 → 归属黑
+	# 黑外墙 row11-18×col11-18，内部填充黑，中央 3x3（row14-16 col14-16）留白方框围 (15,15)
+	s = GameSession.new()
+	for c in range(11, 19):
+		s.board.set_at(11, c, Const.BLACK)
+		s.board.set_at(18, c, Const.BLACK)
+	for r in range(12, 18):
+		s.board.set_at(r, 11, Const.BLACK)
+		s.board.set_at(r, 18, Const.BLACK)
+	for r in range(12, 18):
+		for c in range(12, 18):
+			if r >= 14 and r <= 16 and c >= 14 and c <= 16:
+				continue
+			s.board.set_at(r, c, Const.BLACK)
+	for r in range(14, 17):
+		for c in range(14, 17):
+			if r == 15 and c == 15:
+				continue
+			s.board.set_at(r, c, Const.WHITE)
+	s.board.set_at(0, 0, Const.WHITE)
+	var wg_c8 = s.board.group_at(14, 14)
+	t.expect(SiegeDetector.is_sieged(s.board, wg_c8), "C8: 角部白方框被黑实心墙围困")
+	sc = s.scores()
+	# 白方框围 (15,15) → 白围空圈 points=1，白方框围困 → 归属黑
+	# (15,15) 行15 白境 → is_attack_zone(15, BLACK)=true → 黑围空 +2
+	t.expect_eq(sc.black.occupation_territory, 2, "C8: 角部嵌套归属——白围困圈中心(15,15)归属黑 +2")
+	# 白方框 8 子全在行14-16 白境 → is_defense_zone(row, BLACK)=false → 黑围困分 0
+	t.expect_eq(sc.black.defense_siege, 0, "C8: 角部白方框在白境→黑围困分=0")
+
+	# C9. 边界嵌套包围：黑实心墙贴右边（上边在边境行9），内层白方框围 1 点 → 归属黑
+	# 黑外墙 row9-18×col12-18，内部填充黑，中央 3x3（row12-14 col14-16）留白方框围 (13,15)
+	s = GameSession.new()
+	for c in range(12, 19):
+		s.board.set_at(9, c, Const.BLACK)
+		s.board.set_at(18, c, Const.BLACK)
+	for r in range(10, 18):
+		s.board.set_at(r, 12, Const.BLACK)
+		s.board.set_at(r, 18, Const.BLACK)
+	for r in range(10, 18):
+		for c in range(13, 18):
+			if r >= 12 and r <= 14 and c >= 14 and c <= 16:
+				continue
+			s.board.set_at(r, c, Const.BLACK)
+	for r in range(12, 15):
+		for c in range(14, 17):
+			if r == 13 and c == 15:
+				continue
+			s.board.set_at(r, c, Const.WHITE)
+	s.board.set_at(0, 0, Const.WHITE)
+	var wg_c9 = s.board.group_at(12, 14)
+	t.expect(SiegeDetector.is_sieged(s.board, wg_c9), "C9: 边界白方框被黑实心墙围困")
+	sc = s.scores()
+	# 白方框围 (13,15) → 白围困圈归属黑 → (13,15) 行13 白境 → 黑围空 +2
+	t.expect_eq(sc.black.occupation_territory, 2, "C9: 边界嵌套归属——白围困圈中心(13,15)归属黑 +2")
+	t.expect_eq(sc.black.defense_siege, 0, "C9: 边界白方框在白境→黑围困分=0")

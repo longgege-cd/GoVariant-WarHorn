@@ -440,7 +440,7 @@ func _new_game() -> void:
 		"white": init_sc.white.total(),
 	}
 	# 重置围空/围困状态
-	_prev_enclosures = session.cached_enclosures().duplicate(true)
+	_prev_enclosures = _valid_enclosures()
 	_prev_sieged_stones = _collect_sieged_stones()
 	# 初始化计时器（若配置了思考时间）
 	if _time_setting.is_empty():
@@ -640,7 +640,7 @@ func _on_undo() -> void:
 			board_view.last_move = Vector2i(-1, -1)
 		board_view.queue_redraw()
 	# 更新围空/围困状态追踪（避免误触特效）
-	_prev_enclosures = session.cached_enclosures().duplicate(true)
+	_prev_enclosures = _valid_enclosures()
 	_prev_sieged_stones = _collect_sieged_stones()
 	# 重置分数快照
 	var sc: Dictionary = session.scores()
@@ -906,6 +906,27 @@ func _collect_sieged_stones() -> Dictionary:
 			out[s.y * Const.BOARD_SIZE + s.x] = true
 	return out
 
+# 有效围空圈（过滤由围困棋子围成的无效包围圈，规则3.4/4.2）
+# 供围空特效/状态追踪使用：无效包围圈不计分、不填充、不触发动画
+func _valid_enclosures() -> Array:
+	if session == null:
+		return []
+	var sieged: Dictionary = _collect_sieged_stones()
+	var out: Array = []
+	for e in session.cached_enclosures():
+		if ScoreCalculator.is_enclosure_formed_by_sieged(session.board, e, sieged):
+			continue
+		out.append(e)
+	return out
+
+# 围空点的实际计分（规则4.2：仅对方领土/边境线 +2/点）
+func _territory_points(pts: Array, color: int) -> int:
+	var n := 0
+	for p in pts:
+		if Const.is_attack_zone(p.y, color):
+			n += 2
+	return n
+
 # 检测围空/围困变化并触发特效
 #   围空：新增 → play_territory_formed（新点）；扩展 → play_territory_formed（增量点）；
 #         失守 → play_territory_lost（消失点）；收缩 → play_territory_lost（失去点）
@@ -915,7 +936,8 @@ func _detect_and_trigger_territory_siege() -> void:
 		return
 	var BS: int = Const.BOARD_SIZE
 	# 1. 围空变化检测（按 color 匹配前后围空，对比点集差异）
-	var curr_encs: Array = session.cached_enclosures()
+	# 仅用有效围空圈（规则3.4/4.2：由围困棋子围成的无效包围圈不计分、不触发特效）
+	var curr_encs: Array = _valid_enclosures()
 	# 建立 prev 按 color 分组的点集索引
 	var prev_by_color: Dictionary = {}  # color -> Array[Dictionary{points_set, points}]
 	for prev in _prev_enclosures:
@@ -956,8 +978,8 @@ func _detect_and_trigger_territory_siege() -> void:
 					new_pts.append(p)
 			if not new_pts.is_empty():
 				EffectsPlayer.play_territory_formed(new_pts, c)
-				# 围空得分文字：每次围空扩展都显示
-				var territory_gain: int = new_pts.size() * 2
+				# 围空得分文字：按攻击区实际计分（规则4.2：仅对方领土/边境计分）
+				var territory_gain: int = _territory_points(new_pts, c)
 				EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, new_pts[0], c, "territory")
 			if matched_prev_idx.has(c):
 				matched_prev_idx[c][best_idx] = true
@@ -967,7 +989,7 @@ func _detect_and_trigger_territory_siege() -> void:
 			# 全新围空：所有点都触发特效
 			if not curr_pts.is_empty():
 				EffectsPlayer.play_territory_formed(curr_pts, c)
-				var territory_gain: int = curr_pts.size() * 2
+				var territory_gain: int = _territory_points(curr_pts, c)
 				EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, curr_pts[0], c, "territory")
 	# 未匹配的 prev 围空 → 失守（消失或部分失去）
 	for c in prev_by_color.keys():
@@ -980,8 +1002,8 @@ func _detect_and_trigger_territory_siege() -> void:
 			var lost_pts: Array = prev_list[i].points
 			if not lost_pts.is_empty():
 				EffectsPlayer.play_territory_lost(lost_pts, c)
-				# 围空失守扣减文字：每次失守都显示
-				var territory_loss: int = lost_pts.size() * 2
+				# 围空失守扣减文字：按攻击区实际计分
+				var territory_loss: int = _territory_points(lost_pts, c)
 				EffectsPlayer.play_score_popup("围空 -%d" % territory_loss, lost_pts[0], c, "territory_lost")
 	_prev_enclosures = curr_encs.duplicate(true)
 	# 2. 围困变化检测

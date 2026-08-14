@@ -331,16 +331,19 @@ static func compute_outside(board: BoardModel, wall_color: int) -> Dictionary:
 	return best
 
 # 真眼判定（规则6.4：模拟提吃）
-# 独立真眼 = 空点 + 四周被同块棋子(或棋盘边界)包围 + 对方不能落子(禁入点) + 该组不能通过填眼提吃对方
+# 独立真眼 = 空点 + 四周被己方棋子(或棋盘边界)包围 + 对方不能落子(禁入点) + 己方不能通过填眼提吃对方
 # 判定方式与传统围棋一致：对方在该眼位落子后若无法存活(无气且不能提吃) → 禁入点 → 真眼
+# 注意：眼位四邻允许分属多个同色组群（共享禁入点，如相邻两块棋共用的眼位）。
+#   两块同色组群共享的禁入点，白棋同样无法下入，围住它的黑棋因此杀不死 → 应判活棋。
+#   （条件2的禁入点判定已包含"对方能否提吃任一邻接组群"，保证该点确实无法被白棋占据）
 static func _is_true_eye(board: BoardModel, row: int, col: int, group_set: Dictionary, color: int) -> bool:
 	if board.get_at(row, col) != Const.EMPTY:
 		return false
 	var opp: int = Const.opponent(color)
 	var size: int = board.size
-	# 条件1：正交邻居全为该组棋子（棋盘边界视为包围）
+	# 条件1：正交邻居全为己方棋子（可为多个同色组群，棋盘边界视为包围）
 	for n in board.neighbors(row, col):
-		if not group_set.has(n[0] * size + n[1]):
+		if board.get_at(n[0], n[1]) != color:
 			return false
 	# 条件2：对方不能在该点落子（禁入点，规则6.4模拟提吃判定）
 	# 对方若可合法落子 → 非真眼（对方可填入破坏眼位）

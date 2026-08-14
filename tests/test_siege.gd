@@ -170,3 +170,40 @@ func run(t: TestFramework) -> void:
 	for p in [[0,1],[1,0],[1,2],[2,1]]:
 		b.set_at(p[0], p[1], Const.WHITE)
 	t.expect(not SiegeDetector._is_legal_move(b, 1, 1, Const.BLACK), "11: 四白包围白有外气→自杀非法")
+
+	# 12. 两个同色组群共享两个禁入点 → 各自两真眼活棋（规则6.4：眼位四邻可为多组群）
+	# 10 路棋盘布局（rows 5-9, cols 4-9）：
+	#      c4  c5  c6  c7  c8  c9
+	# r5:  W   W   W   W   W   W
+	# r6:  W   A   A   W   W   W
+	# r7:  W   A   A   A   A   W
+	# r8:  W   A   A   A   P1  B
+	# r9:  W   A   A   P2  B   B
+	# 组群A 左下方（11 子），组群B 右下角（3 子），共享禁入点 P1=(8,8) P2=(9,7)
+	# P1 四邻 = A,B,A,B；P2 四邻 = A,B,A（下贴边）
+	# A 的气 = {P1,P2}，B 的气 = {P1,P2} → 白下 P1/P2 均自杀（禁入点），两块棋杀不死
+	# → 各有两个真眼（共享禁入点）→ 活棋。旧规则要求四邻全为同一组群 → 误判围困
+	b = BoardModel.new(10)
+	for p in [[6,5],[6,6],[7,5],[7,6],[7,7],[7,8],[8,5],[8,6],[8,7],[9,5],[9,6]]:
+		b.set_at(p[0], p[1], Const.BLACK)   # 组群A
+	for p in [[8,9],[9,8],[9,9]]:
+		b.set_at(p[0], p[1], Const.BLACK)   # 组群B
+	# 白墙完整封闭外围，仅留两个共享点 P1/P2 为气
+	for c in range(4, 10):
+		b.set_at(5, c, Const.WHITE)
+	for r in range(5, 10):
+		b.set_at(r, 4, Const.WHITE)
+	b.set_at(6, 7, Const.WHITE); b.set_at(6, 8, Const.WHITE); b.set_at(6, 9, Const.WHITE)
+	b.set_at(7, 9, Const.WHITE)
+	var ga = b.group_at(7, 5)
+	var gb = b.group_at(8, 9)
+	t.expect_eq(ga.stones.size(), 11, "12: 组群A 11 子连通")
+	t.expect_eq(gb.stones.size(), 3, "12: 组群B 3 子连通")
+	# 两个共享点均为白棋禁入点（下入自杀）
+	t.expect(not SiegeDetector._is_legal_move(b, 8, 8, Const.WHITE), "12: 白下P1禁入点")
+	t.expect(not SiegeDetector._is_legal_move(b, 9, 7, Const.WHITE), "12: 白下P2禁入点")
+	# 放宽规则6.4后：眼位四邻可为多个同色组群 → 两个共享点都是真眼
+	t.expect(SiegeDetector.has_two_true_eyes(b, ga), "12: 组群A 共享两禁入点→两真眼活棋")
+	t.expect(SiegeDetector.has_two_true_eyes(b, gb), "12: 组群B 共享两禁入点→两真眼活棋")
+	t.expect(not SiegeDetector.is_sieged(b, ga), "12: 组群A 不被围困（活棋）")
+	t.expect(not SiegeDetector.is_sieged(b, gb), "12: 组群B 不被围困（活棋）")

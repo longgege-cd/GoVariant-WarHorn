@@ -852,6 +852,23 @@ func _record_log_entry(outcome: Dictionary) -> void:
 		black_score_panel.set_log_entries(_log_entries)
 	if white_score_panel != null and white_score_panel.has_method("set_log_entries"):
 		white_score_panel.set_log_entries(_log_entries)
+	# 后台诊断记录：完整得分分解 + 围空圈明细（供复现"同结构不同位置围空分差异"）
+	Log.i("===== 落子 ply=%d %s@(%d,%d) =====" % [outcome.get("ply", session.ply), "黑" if mover_color == Const.BLACK else "白", placed.y, placed.x])
+	var sc_diag: Dictionary = session.scores()
+	var bk_d: ScoreCalculator.Breakdown = sc_diag.black
+	var wt_d: ScoreCalculator.Breakdown = sc_diag.white
+	Log.i("  黑: 活子=%d 围空=%d 围困=%d 歼灭=%d 战损=%d 总=%d | 白: 活子=%d 围空=%d 围困=%d 歼灭=%d 战损=%d 总=%d" % [
+		bk_d.occupation_live, bk_d.occupation_territory, bk_d.defense_siege, bk_d.defense_annihilate, bk_d.casualty_loss, bk_d.total(),
+		wt_d.occupation_live, wt_d.occupation_territory, wt_d.defense_siege, wt_d.defense_annihilate, wt_d.casualty_loss, wt_d.total()])
+	for e_diag in session.cached_enclosures():
+		var att_diag := 0
+		for p_diag in e_diag.points:
+			if Const.is_attack_zone(p_diag.y, e_diag.color):
+				att_diag += 1
+		var si_str := ""
+		for s_diag in e_diag.stones_inside:
+			si_str += "(%d,%d)" % [s_diag.y, s_diag.x]
+		Log.i("  围空圈 色=%s pts=%d 攻击区点数=%d si=[%s]" % ["黑" if e_diag.color == Const.BLACK else "白", e_diag.points.size(), att_diag, si_str])
 
 # 获取当前角色名映射 {Const.BLACK: name, Const.WHITE: name}，供日志弹窗显示
 func _get_role_names() -> Dictionary:

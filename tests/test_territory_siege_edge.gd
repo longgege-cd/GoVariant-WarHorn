@@ -527,10 +527,12 @@ func run(t: TestFramework) -> void:
 	t.expect_eq(sc.white.occupation_territory, 0, "C4: 白围空分=0（围困扣除+非攻击区）")
 	# 白活子分：围困子扣除，远处 (0,0) 行0 → +1 = 1
 	t.expect_eq(sc.white.occupation_live, 1, "C4: 白活子分=1（围困扣除，远处+1）")
-	# 黑围空分：(10,10) 是白方围空圈，白围困→无效→嵌套归属给黑方
-	# (10,10) 行10 → is_attack_zone(10, BLACK)=true → 黑 +2
-	# 白方框 8 子位置不在任何黑方围空圈内（黑方无围空圈）→ 不计入黑围空分
-	t.expect_eq(sc.black.occupation_territory, 2, "C4: 黑围空分=2（白围空圈嵌套归属给黑，仅(10,10)×2）")
+	# 黑围空分：黑 5x5 墙洞腔 = 3x3（圈内 8 白子全部围困 + 中心）
+	# 规则4.2：圈内对方围困棋子计入包围方围空分
+	# 白子在黑攻击区（行9 边境 3子 + 行10-11 白境 5子）×2 = 16
+	# (10,10) 行10 白境 → 白围空圈无效 → 嵌套归属黑 +2
+	# 黑围空 = 16 + 2 = 18
+	t.expect_eq(sc.black.occupation_territory, 18, "C4: 黑围空分=18（洞腔内8围困白子×2=16 + 中心归属+2）")
 	# 黑围困分：is_defense_zone(row, BLACK): 行9边境→true；行10-11白境→false
 	# 行9(3子) → +1 each = 3；行10-11(5子) → 0
 	t.expect_eq(sc.black.defense_siege, 3, "C4: 黑围困分=3（白方框行9的3子在边境）")
@@ -597,8 +599,12 @@ func run(t: TestFramework) -> void:
 	t.expect(SiegeDetector.is_sieged(s.board, wg_c7), "C7: 中央白方框被黑实心墙围困")
 	sc = s.scores()
 	# 白方框围 (9,9) → 白围空圈 points=1，但白方框围困 → 包围圈无效 → (9,9) 归属黑
-	# (9,9) 行9 边境 → is_attack_zone(9, BLACK)=true → 黑围空 +2
-	t.expect_eq(sc.black.occupation_territory, 2, "C7: 中央嵌套归属——白围困圈中心(9,9)归属黑 +2")
+	# 黑实心墙 3x3 洞腔（规则4.2：圈内对方围困棋子计入围空分）：
+	#   圈内 8 白子全部围困 → 计入黑围空（攻击区）
+	#   (9,9) 行9 边境 → +2（嵌套归属）
+	#   白子在攻击区（行9 边境 2子 + 行10 白境 3子）×2 = 10
+	# 黑围空 = 2 + 10 = 12
+	t.expect_eq(sc.black.occupation_territory, 12, "C7: 中央嵌套——黑围空=12（中心+2，洞腔内围困白子5子×2=10）")
 	# 白方框 8 子围困分：行8(黑境3子)+行9(边境2子)=5，行10(白境3子)不计
 	t.expect_eq(sc.black.defense_siege, 5, "C7: 中央白方框围困分=5（行8黑境3+行9边境2）")
 	# 白方框围困 → 不计活子分；远处 (0,0) 行0黑境 → is_attack_zone(0, WHITE)=true → +1
@@ -628,8 +634,9 @@ func run(t: TestFramework) -> void:
 	t.expect(SiegeDetector.is_sieged(s.board, wg_c8), "C8: 角部白方框被黑实心墙围困")
 	sc = s.scores()
 	# 白方框围 (15,15) → 白围空圈 points=1，白方框围困 → 归属黑
-	# (15,15) 行15 白境 → is_attack_zone(15, BLACK)=true → 黑围空 +2
-	t.expect_eq(sc.black.occupation_territory, 2, "C8: 角部嵌套归属——白围困圈中心(15,15)归属黑 +2")
+	# 黑实心墙洞腔内 8 白子全部围困（行14-16 全白境 = 黑攻击区）→ 8×2=16
+	# (15,15) 行15 白境 → +2 → 黑围空 = 16 + 2 = 18
+	t.expect_eq(sc.black.occupation_territory, 18, "C8: 角部嵌套——黑围空=18（洞腔内8围困白子×2=16 + 中心+2）")
 	# 白方框 8 子全在行14-16 白境 → is_defense_zone(row, BLACK)=false → 黑围困分 0
 	t.expect_eq(sc.black.defense_siege, 0, "C8: 角部白方框在白境→黑围困分=0")
 
@@ -656,6 +663,7 @@ func run(t: TestFramework) -> void:
 	var wg_c9 = s.board.group_at(12, 14)
 	t.expect(SiegeDetector.is_sieged(s.board, wg_c9), "C9: 边界白方框被黑实心墙围困")
 	sc = s.scores()
-	# 白方框围 (13,15) → 白围困圈归属黑 → (13,15) 行13 白境 → 黑围空 +2
-	t.expect_eq(sc.black.occupation_territory, 2, "C9: 边界嵌套归属——白围困圈中心(13,15)归属黑 +2")
+	# 白方框围 (13,15) → 白围困圈归属黑；黑实心墙洞腔内 8 白子全部围困（行12-14 全白境 = 黑攻击区）
+	# 8×2=16 + (13,15) 行13 白境 +2 → 黑围空 = 18
+	t.expect_eq(sc.black.occupation_territory, 18, "C9: 边界嵌套——黑围空=18（洞腔内8围困白子×2=16 + 中心+2）")
 	t.expect_eq(sc.black.defense_siege, 0, "C9: 边界白方框在白境→黑围困分=0")

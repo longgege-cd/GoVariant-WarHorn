@@ -87,8 +87,9 @@ func run(t: TestFramework) -> void:
 			t.expect_eq(encs[0].stones_inside[0], Vector2i(9, 9), "被围困白子坐标 (9,9)")
 
 	# 7. 围空圈内对方棋子做出两真眼 → 活棋
-	#    v4.1：_collect_stones_inside 不做死活筛选，但要求组群所有气在围空圈内
-	#    两真眼活棋的气域跨越多个独立空块 → 不在任何单一围空圈的 stones_inside 中
+	#    v4.1：_collect_stones_inside 不做死活筛选（文档：终局时由ScoreCalculator判定围困）
+	#    两真眼活棋的气（两眼）在黑墙洞腔内 → 计入几何候选 stones_inside
+	#    但计分必须排除（规则4.2：圈内对方活棋不计入围空分）
 	#    构造：黑 7x7 围墙（行7-13, 列7-13），圈内白方 5x3 两真眼形
 	#    白棋眼位 (10,9)(10,11) — 正交邻居全为白棋，对角也全为白棋
 	b = BoardModel.new()
@@ -111,12 +112,16 @@ func run(t: TestFramework) -> void:
 	var wg = b.group_at(9, 8)
 	t.expect_eq(wg.stones.size(), 13, "白方两真眼形 13 子连通")
 	t.expect(SiegeDetector.has_two_true_eyes(b, wg), "白方两真眼形判定为活棋")
-	# 活棋 → 不计入任何围空的 stones_inside
+	# stones_inside 为纯几何候选（文档：不做死活筛选，计分时由ScoreCalculator判定围困）
+	# 两真眼活棋的气（两眼）在黑墙洞腔内 → 计入几何候选
 	encs = TerritoryDetector.enclosures(b)
 	var total_stones_inside: int = 0
 	for e in encs:
 		total_stones_inside += e.get("stones_inside", []).size()
-	t.expect_eq(total_stones_inside, 0, "两真眼活棋不计入 stones_inside")
+	t.expect_eq(total_stones_inside, 13, "两真眼活棋几何上在黑墙洞腔内（stones_inside=13，纯几何候选）")
+	# 计分必须排除活棋：黑围空=10（仅外围护城河行12白境5点×2，活棋13子不计入——若计入将 +26=36）
+	var sc_h2: Dictionary = ScoreCalculator.compute(b, {})
+	t.expect_eq(sc_h2.black.occupation_territory, 10, "两真眼活棋不计入黑围空分（活棋排除，仅护城河10分）")
 
 	# 8. 边界含两色但多数色未形成封闭包围圈 → 不计围空（防止误判）
 	b = BoardModel.new()

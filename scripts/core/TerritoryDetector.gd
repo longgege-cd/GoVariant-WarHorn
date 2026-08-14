@@ -124,8 +124,11 @@ static func enclosures(board: BoardModel) -> Array:
 	# 对每个围空圈扫描圈内对方棋子
 	for enc in raw:
 		enc.stones_inside = _collect_stones_inside(board, enc, color_points[enc.color])
-	# 按区域大小降序（外层大圈先处理）
-	raw.sort_custom(func(a, b): return a.points.size() > b.points.size())
+	# 按区域大小升序（内层小圈先处理，嵌套去重时内层优先归属），同大小按发现顺序（Pass A 优先）
+	raw.sort_custom(func(a, b):
+		if a.points.size() != b.points.size():
+			return a.points.size() < b.points.size()
+		return a.seq < b.seq)
 	# 标记每个圈覆盖的所有空点（用于外层去重）
 	var covered: Dictionary = {}  # idx -> true（已被某圈覆盖）
 	# 标记已被某圈计入的 stones_inside 位置（避免同一棋子被多个圈重复计入）
@@ -159,7 +162,7 @@ static func enclosures(board: BoardModel) -> Array:
 	return result
 
 # 收集原始围空圈（未做嵌套去重，未扫描 stones_inside）
-# 每个圈包含：color, points（空点）, border_stones_idx（边界棋子索引）
+# 每个圈包含：color, points（空点）, border_stones_idx（边界棋子索引）, seq（发现顺序，供稳定排序）
 #
 # 规则4.1：包围圈 = 由一方棋子形成的完全封闭的几何边界
 # 算法（连通分量判定）：
@@ -168,21 +171,31 @@ static func enclosures(board: BoardModel) -> Array:
 #   - 区域不在「外部」分量内 → 被 C 包围（C 的围空）
 #   - 这正确处理对角线缺口（flooding正交移动，对角缺口两侧均为墙色棋子，阻挡flooding）
 #   - 也正确处理角落包围（小区域在角落被墙+边缘封闭，大外部区域在「外部」分量中）
+#
+# 两阶段：
+#   Pass A（空区域）：每个空连通块按最内层直接边界归属围空方（规则4.3：内层活棋归内方）
+#   Pass B（洞腔）：补充被对方棋子填满、或空点已归属内圈的洞腔。此类洞腔在 Pass A 中
+#     因空区域直接边界为对方棋子（如被围困的方框）而不被检测，导致圈内对方围困棋子
+#     不计入围空分（违反规则4.2「圈内对方围困棋子计入包围方围空分」）。Pass B 为这些
+#     洞腔补建围空圈，使圈内对方围困棋子得以计分，且空点仍归属内圈（嵌套去重保证）。
 static func _collect_raw_enclosures(board: BoardModel) -> Array:
 	var out: Array = []
+	var size: int = board.size
 	# 预建每色棋子索引墙
 	var walls: Dictionary = {}  # color -> Dictionary{idx->true}
 	for c in [Const.BLACK, Const.WHITE]:
 		walls[c] = {}
-	for r in range(board.size):
-		for c in range(board.size):
+	for r in range(size):
+		for c in range(size):
 			var v: int = board.get_at(r, c)
 			if v == Const.BLACK or v == Const.WHITE:
-				walls[v][r * board.size + c] = true
-	# 预建每色「外部」集合（含最多边缘点的非墙连通分量）
-	var outsides: Dictionary = {}  # color -> Dictionary{idx->true}
+				walls[v][r * size + c] = true
+	# 每色墙连通分量（外部 + 洞腔）
+	var comps: Dictionary = {}  # color -> {outside, cavities}
 	for c in [Const.BLACK, Const.WHITE]:
-		outsides[c] = _compute_outside(board, walls[c])
+		comps[c] = _compute_wall_components(board, walls[c])
+	# Pass A：空区域围空（最内层直接边界归属）
+	var a_covered: Dictionary = {}  # color -> {idx->true}（Pass A 已覆盖的空点）
 	for r in all_empty_regions(board):
 		var bc: Dictionary = r.border_colors
 		if bc.is_empty():
@@ -190,7 +203,7 @@ static func _collect_raw_enclosures(board: BoardModel) -> Array:
 		# 对每个边界色检查是否形成封闭包围圈
 		var enclosing_color: int = -1
 		for c in bc.keys():
-			if _is_region_enclosed_by_wall(board, r, outsides[c]):
+			if _is_region_enclosed_by_wall(board, r, comps[c].outside):
 				enclosing_color = c
 				break  # 至多一色可封闭，找到即停
 		if enclosing_color < 0:
@@ -199,18 +212,69 @@ static func _collect_raw_enclosures(board: BoardModel) -> Array:
 			"color": enclosing_color,
 			"points": r.empty,
 			"border_stones_idx": r.border_stones,
+			"seq": out.size(),
 		})
+		var cset: Dictionary = a_covered.get(enclosing_color, {})
+		for p in r.empty:
+			cset[p.y * size + p.x] = true
+		a_covered[enclosing_color] = cset
+	# Pass B：洞腔围空（补充被对方棋子填满、或空点归属内圈的洞腔）
+	for c in [Const.BLACK, Const.WHITE]:
+		var covered_c: Dictionary = a_covered.get(c, {})
+		for cav in comps[c].cavities:
+			var cav_pts: Array = []
+			var has_empty: bool = false
+			var all_covered: bool = true
+			for idx in cav:
+				if board.grid[idx] != Const.EMPTY:
+					continue
+				has_empty = true
+				if not covered_c.has(idx):
+					all_covered = false
+				cav_pts.append(Vector2i(idx % size, idx / size))
+			# 洞腔空点已全部被 Pass A 同色圈覆盖 → 已表示，跳过（避免重复）
+			if has_empty and all_covered:
+				continue
+			# 计算洞腔边界（墙色棋子邻接洞腔）
+			var border: Dictionary = {}
+			for idx in cav:
+				var pr: int = idx / size
+				var pc: int = idx % size
+				if pr > 0:
+					var ni: int = idx - size
+					if walls[c].has(ni):
+						border[ni] = true
+				if pr < size - 1:
+					var ni: int = idx + size
+					if walls[c].has(ni):
+						border[ni] = true
+				if pc > 0:
+					var ni: int = idx - 1
+					if walls[c].has(ni):
+						border[ni] = true
+				if pc < size - 1:
+					var ni: int = idx + 1
+					if walls[c].has(ni):
+						border[ni] = true
+			out.append({
+				"color": c,
+				"points": cav_pts,
+				"border_stones_idx": border,
+				"seq": out.size(),
+			})
 	return out
 
-# 计算非墙点的「外部」连通分量（含最多边缘点的分量）
+# 计算非墙点的全部连通分量
 # 非墙点 = 空点 + 对方棋子（可穿过），墙色棋子阻挡
+# 返回 { "outside": Dictionary{idx->true}, "cavities": Array[Dictionary{idx->true}] }
 # 「外部」= 含最多边缘点的连通分量 → 大区域/开放区域
-# 「内部」= 其他分量 → 被墙包围的小区域
-static func _compute_outside(board: BoardModel, wall: Dictionary) -> Dictionary:
+# 「洞腔」= 其他分量 → 被墙包围的小区域（可能全为对方棋子，无空点）
+static func _compute_wall_components(board: BoardModel, wall: Dictionary) -> Dictionary:
 	var size: int = board.size
 	var visited: Dictionary = {}
-	var best_outside: Dictionary = {}
+	var best_component: Dictionary = {}
 	var best_edge_count: int = -1
+	var cavities: Array = []
 	for r in range(size):
 		for c in range(size):
 			var idx: int = r * size + c
@@ -250,11 +314,14 @@ static func _compute_outside(board: BoardModel, wall: Dictionary) -> Dictionary:
 					var ni3: int = pi + 1
 					if not component.has(ni3) and not wall.has(ni3):
 						stack.append([pr, pc + 1])
-			# 跟踪含最多边缘点的分量
 			if edge_count > best_edge_count:
+				if best_edge_count >= 0:
+					cavities.append(best_component)  # 原「外部」降为洞腔
 				best_edge_count = edge_count
-				best_outside = component
-	return best_outside
+				best_component = component
+			else:
+				cavities.append(component)
+	return { "outside": best_component, "cavities": cavities }
 
 # 判断空区域是否被墙包围
 # 规则4.1：包围圈 = 完全封闭的几何边界

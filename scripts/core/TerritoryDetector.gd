@@ -194,18 +194,30 @@ static func _collect_raw_enclosures(board: BoardModel) -> Array:
 	var comps: Dictionary = {}  # color -> {outside, cavities}
 	for c in [Const.BLACK, Const.WHITE]:
 		comps[c] = _compute_wall_components(board, walls[c])
-	# Pass A：空区域围空（最内层直接边界归属）
+	# 每色：非墙点 -> 所在洞腔大小（多色均可封闭时选最小洞腔 = 最内层包围圈，规则4.3）
+	var cav_idx: Dictionary = {}  # color -> {idx -> cavity_size}
+	for c in [Const.BLACK, Const.WHITE]:
+		cav_idx[c] = {}
+		for cav in comps[c].cavities:
+			var csz: int = cav.size()
+			for idx in cav:
+				cav_idx[c][idx] = csz
+	# Pass A：空区域围空（最内层包围圈归属）
 	var a_covered: Dictionary = {}  # color -> {idx->true}（Pass A 已覆盖的空点）
 	for r in all_empty_regions(board):
 		var bc: Dictionary = r.border_colors
 		if bc.is_empty():
 			continue  # 全盘空（开局）
-		# 对每个边界色检查是否形成封闭包围圈
+		# 对每个边界色检查是否形成封闭包围圈；多色均可封闭时选「最小洞腔」= 最内层（规则4.3）
 		var enclosing_color: int = -1
+		var best_size: int = 0x7fffffff
 		for c in bc.keys():
-			if _is_region_enclosed_by_wall(board, r, comps[c].outside):
+			if not _is_region_enclosed_by_wall(board, r, comps[c].outside):
+				continue
+			var csz: int = cav_idx[c].get(r.empty[0].y * size + r.empty[0].x, 0x7fffffff)
+			if csz < best_size:
+				best_size = csz
 				enclosing_color = c
-				break  # 至多一色可封闭，找到即停
 		if enclosing_color < 0:
 			continue
 		out.append({

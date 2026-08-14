@@ -667,3 +667,38 @@ func run(t: TestFramework) -> void:
 	# 8×2=16 + (13,15) 行13 白境 +2 → 黑围空 = 18
 	t.expect_eq(sc.black.occupation_territory, 18, "C9: 边界嵌套——黑围空=18（洞腔内8围困白子×2=16 + 中心+2）")
 	t.expect_eq(sc.black.defense_siege, 0, "C9: 边界白方框在白境→黑围困分=0")
+
+	# C10. 混合边界小口袋 → 归最内层包围圈（规则4.3，镜像对称回归）
+	# 复现：真实对局中左上白 L 形墙 + 黑外墙，L 内侧黑子 (2,3)(3,2) 在角落留出 (3,3)
+	#   小口袋（邻接黑2+白2，混合边界）。此前因 bc 遍历先扫到黑 → 判给黑（外层），与
+	#   右下镜像（(15,3) 口袋判给黑=内层）不对称。修复：多色可封闭时选「最小洞腔」=内层。
+	s = GameSession.new()
+	# 左上：黑外墙（列5 行0-4 + 行5 列0-4）
+	for r in range(0, 5):
+		s.board.set_at(r, 5, Const.BLACK)
+	for c in range(0, 5):
+		s.board.set_at(5, c, Const.BLACK)
+	# 左上：白 L 形墙（列4 行0-4 + 行4 列0-4），内层
+	for r in range(0, 5):
+		s.board.set_at(r, 4, Const.WHITE)
+	for c in range(0, 5):
+		s.board.set_at(4, c, Const.WHITE)
+	# 左上：圈内黑子 (2,3)(3,2)，留出 (3,3) 混合边界小口袋
+	s.board.set_at(2, 3, Const.BLACK)
+	s.board.set_at(3, 2, Const.BLACK)
+	# 右下镜像：白外墙（列5 行14-18 + 行13 列0-4）+ 黑 L 内层 + 圈内白子 (15,2)(16,3)
+	for r in range(14, 19):
+		s.board.set_at(r, 5, Const.WHITE)
+	for c in range(0, 5):
+		s.board.set_at(13, c, Const.WHITE)
+	for r in range(14, 19):
+		s.board.set_at(r, 4, Const.BLACK)
+	for c in range(0, 5):
+		s.board.set_at(14, c, Const.BLACK)
+	s.board.set_at(15, 2, Const.WHITE)
+	s.board.set_at(16, 3, Const.WHITE)
+	sc = s.scores()
+	# (3,3) 归白（内层 L）→ 白围空 = 14点×2 = 28；(15,3) 归黑（内层 L）→ 黑围空 = 28
+	t.expect_eq(sc.white.occupation_territory, 28, "C10: 左上白内层 L 围空=28（含(3,3)混合边界口袋14点×2）")
+	t.expect_eq(sc.black.occupation_territory, 28, "C10: 右下黑内层 L 围空=28（含(15,3)混合边界口袋14点×2）")
+	t.expect_eq(sc.black.total(), sc.white.total(), "C10: 镜像结构总分对称（活子9+围空28）")

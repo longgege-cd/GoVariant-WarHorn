@@ -55,11 +55,12 @@ static func compute(board: BoardModel, counters: Dictionary, precomputed_sieged:
 			for s in g.stones:
 				sieged_stones_set[s.y * board.size + s.x] = g.color
 	else:
-		for g in board.all_groups():
-			if SiegeDetector.is_sieged(board, g):
-				sieged_groups_list.append(g)
-				for s in g.stones:
-					sieged_stones_set[s.y * board.size + s.x] = g.color
+		# 全盘死活迭代求解（v6.2：有效包围圈 = 由活棋围成的封闭边界）
+		var da: Dictionary = SiegeDetector.solve_dead_alive(board)
+		sieged_groups_list = da.sieged
+		for g in sieged_groups_list:
+			for s in g.stones:
+				sieged_stones_set[s.y * board.size + s.x] = g.color
 
 	# 2. 围空分（规则3.2：圈内空点 +2/点；圈内对方棋子位置仅围困时 +2/点，活棋不计入）
 	# 纯几何判定，不依赖围成棋子死活（规则6.1）

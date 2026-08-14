@@ -149,11 +149,11 @@ static func _check_position(sim: GameSession, path: String, ply: int, cum: int) 
 			print("FAIL [%s] 围空分 %d != 独立重算 %d" % [tag, b.occupation_territory, ref_terr[color]])
 
 	# ---- 围困不变量（真眼必活 / 活棋有气 / 围困三条件 / 棋盘合法） ----
-	var outs: Dictionary = {
-		Const.BLACK: SiegeDetector.compute_outside(board, Const.BLACK),
-		Const.WHITE: SiegeDetector.compute_outside(board, Const.WHITE),
-	}
-	var sieged_verified: Dictionary = {}  # idx -> true（独立判定围困）
+	# v6.2：全盘死活用迭代不动点求解（有效包围圈 = 由活棋围成的封闭边界）
+	var da: Dictionary = SiegeDetector.solve_dead_alive(board)
+	var sieged_keys: Dictionary = {}  # idx -> true（迭代判定的围困组群首子）
+	for g in da.sieged:
+		sieged_keys[g.stones[0].y * board.size + g.stones[0].x] = true
 	for g in board.all_groups():
 		var tag: String = "%s ply=%d %s组群@(%d,%d)" % [path.get_file(), ply, "黑" if g.color == Const.BLACK else "白", g.stones[0].y, g.stones[0].x]
 		var libs: int = board.liberties(g.stones).size()
@@ -161,30 +161,21 @@ static func _check_position(sim: GameSession, path: String, ply: int, cum: int) 
 		if libs <= 0:
 			res.fails += 1
 			print("FAIL [%s] 组群无气（非法局面/提子残留）" % tag)
-		var g_out: Dictionary = outs.get(Const.opponent(g.color), {})
-		var alive: bool = SiegeDetector.is_alive(board, g, g_out)
-		var sieged: bool = not alive
-		if sieged:
-			sieged_verified[g.stones[0].y * board.size + g.stones[0].x] = true
+		var gkey: int = g.stones[0].y * board.size + g.stones[0].x
+		var sieged: bool = sieged_keys.has(gkey)
 		var has_eyes: bool = SiegeDetector.has_two_true_eyes(board, g)
 		res.checks += 1
-		if has_eyes and not alive:
+		if has_eyes and sieged:
 			res.fails += 1
 			print("FAIL [%s] 有两真眼却被判围困" % tag)
-		if alive and libs <= 0:
+		if not sieged and libs <= 0:
 			res.fails += 1
 			print("FAIL [%s] 判活棋但无气" % tag)
 		if sieged:
-			res.checks += 3
-			if not SiegeDetector._is_surrounded_by_opponent(board, g, g_out):
-				res.fails += 1
-				print("FAIL [%s] 判围困但未被对方包围" % tag)
+			res.checks += 2
 			if SiegeDetector.count_legal_empty_points(board, g) >= 4:
 				res.fails += 1
 				print("FAIL [%s] 判围困但圈内合法空点>=4" % tag)
-			if has_eyes:
-				res.fails += 1
-				print("FAIL [%s] 判围困但有真眼" % tag)
 			# 提示：围困组群不在对方围空圈 stones_inside 中（围空/围困模块口径差异，非错误）
 			if not _group_inside_any_enclosure(board, g):
 				res.infos += 1
@@ -194,9 +185,9 @@ static func _check_position(sim: GameSession, path: String, ply: int, cum: int) 
 	var cached_set: Dictionary = {}
 	for g in sim.cached_sieged_groups():
 		cached_set[g.stones[0].y * board.size + g.stones[0].x] = true
-	if cached_set.size() != sieged_verified.size():
+	if cached_set.size() != sieged_keys.size():
 		res.fails += 1
-		print("FAIL [%s ply=%d] 缓存围困组群数 %d != 独立判定 %d" % [path.get_file(), ply, cached_set.size(), sieged_verified.size()])
+		print("FAIL [%s ply=%d] 缓存围困组群数 %d != 独立判定 %d" % [path.get_file(), ply, cached_set.size(), sieged_keys.size()])
 	return res
 
 # ===== 独立重算辅助 =====

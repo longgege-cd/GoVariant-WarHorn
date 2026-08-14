@@ -207,3 +207,34 @@ func run(t: TestFramework) -> void:
 	t.expect(SiegeDetector.has_two_true_eyes(b, gb), "12: 组群B 共享两禁入点→两真眼活棋")
 	t.expect(not SiegeDetector.is_sieged(b, ga), "12: 组群A 不被围困（活棋）")
 	t.expect(not SiegeDetector.is_sieged(b, gb), "12: 组群B 不被围困（活棋）")
+
+	# 13. 死棋围不成有效包围圈（v6.2）：被围困棋子围住的组群应活
+	# 三层方环（11 路棋盘，黑C 紧贴白B，无环带空间）：
+	#   黑C 大环 row3-8×col3-8（活棋，环外有空点）
+	#   白B 中环 row4-7×col4-7（被黑C 完全包围，唯一气=内部3空点<4，无两眼 → 围困）
+	#   黑A 单子 (5,5) 在白B 环内（白B 死棋不作墙 → 黑A 气域可穿出到黑C 环内大空间 → 活）
+	# 旧纯几何语义：黑A 被白B 包围 → 误判围困；v6.2 有效包围圈语义：白B 是死棋 → 黑A 活
+	b = BoardModel.new(11)
+	for c in range(3, 9):
+		b.set_at(3, c, Const.BLACK); b.set_at(8, c, Const.BLACK)  # 黑C 大环上下
+	for r in range(4, 8):
+		b.set_at(r, 3, Const.BLACK); b.set_at(r, 8, Const.BLACK)  # 黑C 大环左右
+	for c in range(4, 8):
+		b.set_at(4, c, Const.WHITE); b.set_at(7, c, Const.WHITE)  # 白B 中环上下
+	for r in range(5, 7):
+		b.set_at(r, 4, Const.WHITE); b.set_at(r, 7, Const.WHITE)  # 白B 中环左右
+	b.set_at(5, 5, Const.BLACK)  # 黑A 单子（白B 环内）
+	var da13: Dictionary = SiegeDetector.solve_dead_alive(b)
+	var a13_sieged := false
+	var b13_sieged := false
+	var c13_sieged := false
+	for sg in da13.sieged:
+		if sg.color == Const.WHITE:
+			b13_sieged = true
+		elif sg.stones.size() == 1 and sg.stones[0] == Vector2i(5, 5):
+			a13_sieged = true
+		else:
+			c13_sieged = true
+	t.expect(b13_sieged, "13: 白B 中环被黑C 有效包围→围困（死棋）")
+	t.expect(not a13_sieged, "13: 黑A 被死棋白B 围住→活棋（v6.2 有效包围圈）")
+	t.expect(not c13_sieged, "13: 黑C 大环活棋")

@@ -84,17 +84,10 @@ func _ensure_cache() -> void:
 		return
 	if _cache_valid:
 		return
-	# 外部集合每色各算一次（角部/边缘包围圈判定用，同盘面所有组群复用）
-	_cached_outsides = {
-		Const.BLACK: SiegeDetector.compute_outside(board, Const.BLACK),
-		Const.WHITE: SiegeDetector.compute_outside(board, Const.WHITE),
-	}
-	# 先计算围困组群和围空（各一次遍历），供 ScoreCalculator 和缓存复用（避免重复遍历）
-	_cached_sieged_groups = []
-	for g in board.all_groups():
-		var g_out: Dictionary = _cached_outsides.get(Const.opponent(g.color), {})
-		if SiegeDetector.is_sieged(board, g, g_out):
-			_cached_sieged_groups.append(g)
+	# 全盘死活迭代求解（v6.2：有效包围圈 = 由活棋围成的封闭边界）
+	# 返回 { "alive": Array, "sieged": Array }；外部集合由迭代内部按"对方活棋墙"计算
+	var da: Dictionary = SiegeDetector.solve_dead_alive(board)
+	_cached_sieged_groups = da.sieged
 	_cached_enclosures = TerritoryDetector.enclosures(board)
 	_cached_scores = ScoreCalculator.compute(board, counters, _cached_sieged_groups, _cached_enclosures)
 	_cache_valid = true
@@ -118,16 +111,9 @@ func cached_sieged_groups() -> Array:
 	if _use_cache:
 		_ensure_cache()
 		return _cached_sieged_groups
-	# 非缓存模式：独立判定（外部集合每色算一次复用）
-	var result: Array = []
-	var outs: Dictionary = {
-		Const.BLACK: SiegeDetector.compute_outside(board, Const.BLACK),
-		Const.WHITE: SiegeDetector.compute_outside(board, Const.WHITE),
-	}
-	for g in board.all_groups():
-		if SiegeDetector.is_sieged(board, g, outs.get(Const.opponent(g.color), {})):
-			result.append(g)
-	return result
+	# 非缓存模式：全盘死活迭代求解（v6.2 有效包围圈语义）
+	var da: Dictionary = SiegeDetector.solve_dead_alive(board)
+	return da.sieged
 
 func pieces_left(color: int) -> int:
 	return piece_limit - int(stones_placed.get(color, 0))
@@ -565,11 +551,14 @@ func _compute_special_rewards() -> Dictionary:
 			var zone: int = Const.zone_of_row(row)
 			var in_opp: bool = zone == Const.enemy_zone(color)
 			var in_own: bool = zone == Const.own_zone(color)
-			# 活棋判定
+			# 活棋判定（v6.2：有效包围圈迭代求解）
 			var g: Dictionary = board.group_at(row, p.pos.x)
 			if g.stones.is_empty():
 				continue
-			if SiegeDetector.is_sieged(board, g):
+			var sieged_set: Dictionary = {}
+			for sg in cached_sieged_groups():
+				sieged_set[sg.stones[0].y * board.size + sg.stones[0].x] = true
+			if sieged_set.has(g.stones[0].y * board.size + g.stones[0].x):
 				continue
 			var participates: bool = TerritoryDetector.stone_participates_in_enclosure(board, row, p.pos.x, color)
 			if in_opp and participates:
@@ -612,6 +601,10 @@ func _enclosure_territory_score(color: int, piece_pos: Vector2i) -> int:
 # 某色、某参与棋子所在围空的防御分（圈内被围困的对方子在防御区 *1）
 func _enclosure_defense_score(color: int, piece_pos: Vector2i) -> int:
 	var best: int = 0
+	# v6.2：圈内被围困的对方子用迭代求解结果判定
+	var sieged_set: Dictionary = {}
+	for sg in cached_sieged_groups():
+		sieged_set[sg.stones[0].y * board.size + sg.stones[0].x] = true
 	for e in TerritoryDetector.enclosures_of(board, color):
 		var hit: bool = false
 		for p in e.points:
@@ -636,7 +629,7 @@ func _enclosure_defense_score(color: int, piece_pos: Vector2i) -> int:
 					seen[ni] = true
 					# 该子是否被围困（在防御区）
 					var og: Dictionary = board.group_at(n[0], n[1])
-					if not og.stones.is_empty() and SiegeDetector.is_sieged(board, og) and Const.is_defense_zone(n[0], color):
+					if not og.stones.is_empty() and sieged_set.has(og.stones[0].y * board.size + og.stones[0].x) and Const.is_defense_zone(n[0], color):
 						s += 1
 		best = max(best, s)
 	return best

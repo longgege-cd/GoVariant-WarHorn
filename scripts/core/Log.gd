@@ -21,9 +21,12 @@ func _open_file() -> void:
 		_file.close()
 	_file_day = day
 	DirAccess.make_dir_recursive_absolute("user://logs")
-	_file = FileAccess.open("user://logs/game_%s.log" % day, FileAccess.WRITE)
+	# 追加模式打开（不截断）：避免多进程/多会话互相清空日志，保证历史可追溯
+	_file = FileAccess.open("user://logs/game_%s.log" % day, FileAccess.READ_WRITE)
 	if _file == null:
 		push_warning("Log: 无法打开日志文件 user://logs/game_%s.log" % day)
+	else:
+		_file.seek_end()
 
 func set_sink(s: Callable) -> void:
 	_sink = s

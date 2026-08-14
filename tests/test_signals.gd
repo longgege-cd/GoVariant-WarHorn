@@ -167,6 +167,88 @@ func run(t: TestFramework) -> void:
 	var fail_undo = s.undo()
 	t.expect(not fail_undo.ok, "终局后悔棋失败")
 
+	# 11. 虚手限制：每方每局 2 次，同一方不得连续虚手
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	var p1 = s.do_pass(Const.BLACK)
+	t.expect(p1.ok, "PASS1: 黑第1次虚手成功")
+	t.expect_eq(s.to_move, Const.WHITE, "PASS1: 虚手后轮到白")
+	# 连续虚手守卫：轮次交替下同一方天然不会连续两回合，这里直接构造状态验证守卫逻辑
+	s.last_pass_color = Const.BLACK
+	s.to_move = Const.BLACK
+	var p2 = s.do_pass(Const.BLACK)
+	t.expect(not p2.ok, "PASS2: 黑连续虚手被拒")
+	t.expect(p2.reason.contains("连续"), "PASS2: 拒绝原因含'连续'（%s）" % p2.reason)
+	t.expect_eq(s.pass_counts[Const.BLACK], 1, "PASS2: 黑虚手计数仍为1")
+	t.expect_eq(s.consecutive_passes, 1, "PASS2: 连续虚手计数未增加")
+	s.to_move = Const.WHITE  # 恢复真实轮次（PASS2 为验证守卫手动改过）
+	var w1 = s.play_move(Const.WHITE, 9, 9)
+	t.expect(w1.ok, "PASS3: 白落子成功")
+	t.expect_eq(s.last_pass_color, Const.EMPTY, "PASS3: 落子后 last_pass_color 重置")
+	var p3 = s.do_pass(Const.BLACK)
+	t.expect(p3.ok, "PASS4: 对方落子后黑可再虚手")
+	t.expect_eq(s.pass_counts[Const.BLACK], 2, "PASS4: 黑虚手计数=2")
+	var p4 = s.do_pass(Const.WHITE)
+	t.expect(p4.ok, "PASS5: 白第1次虚手")
+	t.expect(s.game_over, "PASS5: 双方连续虚手→终局")
+	var p5 = s.do_pass(Const.BLACK)
+	t.expect(not p5.ok, "PASS6: 终局后虚手被拒")
+
+	# 12. 每方 2 次上限：第 3 次虚手被拒
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	s.do_pass(Const.BLACK)                      # 黑1
+	s.play_move(Const.WHITE, 9, 9)              # 白落子（重置连续虚手）
+	s.do_pass(Const.BLACK)                      # 黑2
+	s.play_move(Const.WHITE, 10, 10)
+	var q1 = s.do_pass(Const.BLACK)             # 黑3 → 拒
+	t.expect(not q1.ok, "PASS7: 黑第3次虚手被拒（每方2次上限）")
+	t.expect(q1.reason.contains("用尽"), "PASS7: 拒绝原因含'用尽'（%s）" % q1.reason)
+	t.expect_eq(s.pass_counts[Const.BLACK], 2, "PASS7: 黑虚手计数=2")
+	t.expect_eq(s.to_move, Const.BLACK, "PASS7: 拒后仍轮到黑（无法虚手只能落子）")
+	s.play_move(Const.BLACK, 8, 8)              # 黑只能落子
+	s.do_pass(Const.WHITE)                      # 白1
+	s.play_move(Const.BLACK, 7, 7)
+	s.do_pass(Const.WHITE)                      # 白2
+	s.play_move(Const.BLACK, 6, 6)
+	var q2 = s.do_pass(Const.WHITE)             # 白3 → 拒
+	t.expect(not q2.ok, "PASS8: 白第3次虚手被拒（每方2次上限）")
+	t.expect_eq(s.pass_counts[Const.WHITE], 2, "PASS8: 白虚手计数=2")
+
+	# 13. 悔棋恢复虚手状态
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	s.do_pass(Const.BLACK)                      # 黑1
+	s.play_move(Const.WHITE, 9, 9)              # 白落子
+	t.expect_eq(s.pass_counts[Const.BLACK], 1, "PASS9: 悔棋前黑虚手1次")
+	t.expect_eq(s.last_pass_color, Const.EMPTY, "PASS9: 悔棋前 last_pass_color=EMPTY")
+	s.undo()                                    # 悔掉白落子
+	t.expect_eq(s.last_pass_color, Const.BLACK, "PASS9: 悔棋后 last_pass_color=BLACK（黑虚手状态恢复）")
+	t.expect_eq(s.to_move, Const.WHITE, "PASS9: 悔棋后轮到白")
+	s.undo()                                    # 悔掉黑虚手
+	t.expect_eq(s.pass_counts[Const.BLACK], 0, "PASS9: 悔棋后黑虚手计数恢复0")
+
+	# 14. clone 同步虚手状态 + skip_pass_limits 绕过（回放旧棋谱）
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	s.do_pass(Const.BLACK)
+	var cloned = s.clone()
+	t.expect_eq(cloned.pass_counts[Const.BLACK], 1, "PASS10: clone 同步黑虚手计数")
+	t.expect_eq(cloned.last_pass_color, Const.BLACK, "PASS10: clone 同步 last_pass_color")
+	cloned.to_move = Const.BLACK
+	var pc = cloned.do_pass(Const.BLACK)
+	t.expect(not pc.ok and pc.reason.contains("连续"), "PASS10: clone 上黑连续虚手同样被拒")
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	s.skip_pass_limits = true
+	s.last_pass_color = Const.BLACK  # 模拟黑上一手虚手
+	var sp1 = s.do_pass(Const.BLACK)  # 绕过连续限制 → 成功
+	t.expect(sp1.ok, "PASS11: skip_pass_limits 绕过连续虚手限制")
+	t.expect_eq(s.pass_counts[Const.BLACK], 1, "PASS11: 绕过时虚手计数照常累计")
+	var sp2 = s.do_pass(Const.WHITE)
+	t.expect(sp2.ok, "PASS11: 白虚手成功")
+	t.expect(s.game_over, "PASS11: 双方连续虚手（旧规则）→终局")
+
 # 信号回调
 func _on_move(outcome: Dictionary) -> void:
 	_state.move += 1

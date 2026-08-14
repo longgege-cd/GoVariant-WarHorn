@@ -13,6 +13,10 @@ var piece_limit: int = Const.PIECE_LIMIT   # 每方兵力上限（可由游戏�
 var to_move: int = Const.BLACK
 var ply: int = 0                  # 总手数（每方一手 +1）
 var consecutive_passes: int = 0
+const PASS_LIMIT: int = 2         # 每方每局虚手次数上限
+var pass_counts: Dictionary = {}  # color -> 本局虚手次数
+var last_pass_color: int = Const.EMPTY  # 上一手虚手方（EMPTY=无；同一方不得连续虚手）
+var skip_pass_limits: bool = false  # true 时跳过虚手次数/连续限制（回放/审计旧棋谱用，旧规则无此限制）
 var game_over: bool = false
 var stones_placed: Dictionary = {}   # color -> 累计普通落子数（不可再生）
 var counters: Dictionary = {}        # color -> {annihilate, normal_lost, special_lost}
@@ -51,6 +55,8 @@ func _reset_state() -> void:
 	to_move = Const.BLACK
 	ply = 0
 	consecutive_passes = 0
+	pass_counts = { Const.BLACK: 0, Const.WHITE: 0 }
+	last_pass_color = Const.EMPTY
 	game_over = false
 	stones_placed = { Const.BLACK: 0, Const.WHITE: 0 }
 	counters = {
@@ -324,9 +330,21 @@ func do_pass(color: int) -> Dictionary:
 		outcome.ok = false
 		outcome.reason = "非该方行棋"
 		return outcome
+	# 虚手次数限制：每方每局 PASS_LIMIT 次，同一方不得连续虚手
+	# （回放/审计旧棋谱时通过 skip_pass_limits 绕过，旧规则无此限制）
+	if not skip_pass_limits and pass_counts.get(color, 0) >= PASS_LIMIT:
+		outcome.ok = false
+		outcome.reason = "虚手次数已用尽（每方每局 %d 次）" % PASS_LIMIT
+		return outcome
+	if not skip_pass_limits and last_pass_color == color:
+		outcome.ok = false
+		outcome.reason = "不可连续虚手（对方落子后可再次虚手）"
+		return outcome
 	# 校验通过，取行棋前快照（终局虚手不 push，因 _commit_turn 不被调用）
 	_begin_undo_snapshot()
 	consecutive_passes += 1
+	pass_counts[color] = pass_counts.get(color, 0) + 1
+	last_pass_color = color
 	outcome.passed = true
 	# 虚手不产生劫，清除劫点
 	ko_point = GoRules.NO_KO
@@ -422,9 +440,10 @@ func _advance_ply_and_expiry(outcome: Dictionary) -> void:
 	outcome.expired = expired
 
 func _commit_turn(outcome: Dictionary, color: int, did_place: bool) -> void:
-	# 任何实际行棋（落子/部署/弹子）取消连续虚手；虚手已在 pass() 中累计
+	# 任何实际行棋（落子/部署/弹子）取消连续虚手并恢复双方虚手权；虚手已在 pass() 中累计
 	if not outcome.passed:
 		consecutive_passes = 0
+		last_pass_color = Const.EMPTY
 	ply += 1
 	outcome.ply = ply
 	to_move = Const.opponent(color)
@@ -642,6 +661,8 @@ func _take_snapshot() -> Dictionary:
 		"to_move": to_move,
 		"ply": ply,
 		"consecutive_passes": consecutive_passes,
+		"pass_counts": pass_counts.duplicate(true),
+		"last_pass_color": last_pass_color,
 		"game_over": game_over,
 		"stones_placed": stones_placed.duplicate(true),
 		"counters": counters.duplicate(true),
@@ -675,6 +696,8 @@ func undo() -> Dictionary:
 	to_move = snap.to_move
 	ply = snap.ply
 	consecutive_passes = snap.consecutive_passes
+	pass_counts = snap.pass_counts
+	last_pass_color = snap.last_pass_color
 	game_over = snap.game_over
 	stones_placed = snap.stones_placed
 	counters = snap.counters
@@ -699,6 +722,8 @@ func clone() -> GameSession:
 	s.to_move = to_move
 	s.ply = ply
 	s.consecutive_passes = consecutive_passes
+	s.pass_counts = pass_counts.duplicate(true)
+	s.last_pass_color = last_pass_color
 	s.game_over = game_over
 	s.stones_placed = stones_placed.duplicate(true)
 	s.counters = counters.duplicate(true)

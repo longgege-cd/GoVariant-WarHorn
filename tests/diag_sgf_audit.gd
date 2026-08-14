@@ -52,6 +52,7 @@ static func _audit_game(path: String, full_check: bool) -> Dictionary:
 	var sim := GameSession.new(Const.KOMI_DEFAULT, false, 361)
 	sim.emit_signals = false
 	sim.skip_endgame = true
+	sim.skip_pass_limits = true  # 旧棋谱不受虚手次数/连续限制
 	var ply := 0
 	var cum := 0  # 累计提子数
 	for mv in parsed.moves:

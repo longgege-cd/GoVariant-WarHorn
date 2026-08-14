@@ -224,6 +224,7 @@ func _compute_replay_score_history() -> void:
 	var sim := GameSession.new(Const.KOMI_DEFAULT, false, 361)
 	sim.emit_signals = false
 	sim.skip_endgame = true
+	sim.skip_pass_limits = true  # 旧棋谱不受虚手次数/连续限制（规则改动前的对局）
 	var sc0: Dictionary = sim.scores()
 	_replay_score_history.append({
 		"black": sc0.black.total(),
@@ -286,6 +287,8 @@ func _jump_to_replay_ply(ply: int) -> void:
 	_session.emit_signals = false
 	# 跳过 do_pass 的终局判定（避免 _both_cannot_move 的 O(N⁴) 遍历和 final_result 终局结算）
 	_session.skip_endgame = true
+	# 旧棋谱不受虚手次数/连续限制（规则改动前的对局）
+	_session.skip_pass_limits = true
 	_board_view.set_session(_session)
 	_black_score_panel.set_session(_session)
 	_white_score_panel.set_session(_session)
@@ -321,6 +324,8 @@ func _step_forward() -> void:
 	_session.emit_signals = false
 	# 跳过 do_pass 的终局判定（同 _jump_to_replay_ply）
 	_session.skip_endgame = true
+	# 旧棋谱不受虚手次数/连续限制（规则改动前的对局）
+	_session.skip_pass_limits = true
 	if mv.pass:
 		_session.do_pass(mv.color)
 	else:

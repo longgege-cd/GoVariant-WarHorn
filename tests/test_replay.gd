@@ -43,6 +43,7 @@ func run(t: TestFramework) -> void:
 		var sim := GameSession.new(Const.KOMI_DEFAULT, false, 361)  # 回放不受 112 兵力限制
 		sim.emit_signals = false  # 禁用信号发射，跳过每步 scores() 计算（性能优化）
 		sim.skip_endgame = true   # 跳过 do_pass 终局判定（避免终局结算的 O(N⁴) 开销）
+		sim.skip_pass_limits = true  # 旧棋谱不受虚手次数/连续限制
 		var ok_count: int = 0
 		var fail_count: int = 0
 		for mv in parsed.moves:
@@ -69,6 +70,7 @@ func run(t: TestFramework) -> void:
 	var sim6 := GameSession.new(Const.KOMI_DEFAULT, false, 361)  # 回放不受兵力限制
 	sim6.emit_signals = false  # 性能优化
 	sim6.skip_endgame = true   # 跳过终局判定（性能优化）
+	sim6.skip_pass_limits = true  # 旧棋谱不受虚手次数/连续限制
 	var score_history: Array = []
 	var sc0: Dictionary = sim6.scores()
 	score_history.append({"black": sc0.black.total(), "white": sc0.white.total()})
@@ -88,6 +90,7 @@ func run(t: TestFramework) -> void:
 		var sim7 := GameSession.new(Const.KOMI_DEFAULT, false, 361)  # 回放不受兵力限制
 		sim7.emit_signals = false  # 性能优化
 		sim7.skip_endgame = true   # 跳过终局判定（性能优化）
+		sim7.skip_pass_limits = true  # 旧棋谱不受虚手次数/连续限制
 		for i in min(target_ply, parsed6.moves.size()):
 			var mv: Dictionary = parsed6.moves[i]
 			if sim7.game_over:
@@ -122,6 +125,7 @@ func run(t: TestFramework) -> void:
 	var sim_full := GameSession.new(Const.KOMI_DEFAULT, false, 361)
 	sim_full.emit_signals = false
 	sim_full.skip_endgame = true
+	sim_full.skip_pass_limits = true  # 旧棋谱不受虚手次数/连续限制
 	var illegal_cnt: int = 0
 	for mv in kejie.moves:
 		if mv.pass:
@@ -135,6 +139,7 @@ func run(t: TestFramework) -> void:
 	var sim_limited := GameSession.new(Const.KOMI_DEFAULT, false, Const.PIECE_LIMIT)
 	sim_limited.emit_signals = false
 	sim_limited.skip_endgame = true
+	sim_limited.skip_pass_limits = true  # 旧棋谱不受虚手次数/连续限制
 	var blocked: int = 0
 	for mv in kejie.moves:
 		if mv.pass:

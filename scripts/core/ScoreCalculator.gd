@@ -175,14 +175,18 @@ static func compute_final(board: BoardModel, counters: Dictionary, komi: float, 
 	var bk_final: float = bk_total - komi
 	var wt_final: float = wt_total
 	var winner: String = "和棋"
+	var winner_color: int = -1
 	if bk_final > wt_final:
 		winner = "黑方胜"
+		winner_color = Const.BLACK
 	elif wt_final > bk_final:
 		winner = "白方胜"
+		winner_color = Const.WHITE
 	return {
 		"black": { "breakdown": bk, "total": bk_total, "komi": komi, "final": bk_final },
 		"white": { "breakdown": wt, "total": wt_total, "final": wt_final },
 		"winner": winner,
+		"winner_color": winner_color,
 	}
 
 # 判定包围圈是否由围困棋子形成（规则4.2 + 3.4）

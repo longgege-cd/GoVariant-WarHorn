@@ -16,9 +16,9 @@ var _status_label: Label
 var _peer_joined: bool = false
 
 func _ready() -> void:
-	title = "房间等待中"
-	ok_button_text = "开始游戏"
-	add_cancel_button("取消房间")
+	title = LocaleManager.L("net.wait_title")
+	ok_button_text = LocaleManager.L("net.wait_start")
+	add_cancel_button(LocaleManager.L("net.wait_cancel"))
 	_build_ui()
 	_update_state(false)
 	confirmed.connect(func():
@@ -31,7 +31,7 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	add_child(vbox)
 	_status_label = Label.new()
-	_status_label.text = "等待对手加入…"
+	_status_label.text = LocaleManager.L("net.wait_waiting")
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status_label.add_theme_font_size_override("font_size", 14)
 	_status_label.add_theme_color_override("font_color", UITheme.C_GOLD)
@@ -46,10 +46,10 @@ func set_peer_joined(joined: bool) -> void:
 
 func _update_state(joined: bool) -> void:
 	if joined:
-		_status_label.text = "对手已加入！\n点击「开始游戏」开始对局"
+		_status_label.text = LocaleManager.L("net.wait_joined")
 		_status_label.add_theme_color_override("font_color", UITheme.C_GOLD_BRIGHT)
 		get_ok_button().disabled = false
 	else:
-		_status_label.text = "等待对手加入…"
+		_status_label.text = LocaleManager.L("net.wait_waiting")
 		_status_label.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
 		get_ok_button().disabled = true  # 未加入时禁用开始按钮

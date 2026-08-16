@@ -11,6 +11,7 @@
 extends Control
 
 const AIManager = preload("res://scripts/ai/AIManager.gd")
+const AIDifficulty = preload("res://scripts/ai/AIDifficulty.gd")
 
 signal back_to_main_menu_requested  # 返回主菜单
 
@@ -89,6 +90,8 @@ func _ready() -> void:
 	NetSync.sync_mismatch.connect(_on_net_sync_mismatch)
 	NetSync.game_started.connect(_on_net_game_started)
 	NetworkManager.joined.connect(_on_net_joined)
+	# 语言切换：刷新得分板角色名（你/对手/AI·难度）
+	LocaleManager.locale_changed.connect(func(_loc: String): _update_role_names())
 
 # 创建玩家头像目录 user://avatars/，玩家可放 black.png / white.png 自定义头像
 func _ensure_avatar_dir() -> void:
@@ -343,7 +346,7 @@ func _on_room_created(time_setting: Dictionary, piece_limit: int, komi: float) -
 	RoomDiscovery.start_broadcasting(room_info)
 	if not RoomDiscovery.is_broadcasting():
 		# 广播失败（5006 端口被占用）：房间无法被其他玩家发现
-		_show_error("房间广播失败（端口 5006 可能被占用），对手可能搜索不到您的房间")
+		_show_error(LocaleManager.L("game.room_broadcast_failed"))
 	# 等待 RoomHostDialog 销毁，避免两个 AcceptDialog 争抢 exclusive child
 	await get_tree().process_frame
 	# 弹出等待对手对话框
@@ -353,7 +356,7 @@ func _on_room_created(time_setting: Dictionary, piece_limit: int, komi: float) -
 	_room_wait_dlg.canceled.connect(_on_room_wait_canceled)
 	_room_wait_dlg.popup_centered()
 	# 注：不在此处提前 set_peer_joined(true)，仅依赖 peer_joined 信号驱动状态
-	_show_status("已创建房间（端口 %d），等待对手加入…" % port)
+	_show_status(LocaleManager.L("game.room_created", {"port": port}))
 
 # 玩家B选择「加入房间」→ 弹出房间列表对话框
 func _on_online_join_entry() -> void:
@@ -380,7 +383,7 @@ func _on_room_join_confirmed(ip: String, port: int) -> void:
 		_room_list_dlg = null
 	if start_online_client(ip, port):
 		control_panel.update_online_state(true)
-		_show_status("已连接 %s:%d，等待主机开始游戏…" % [ip, port])
+		_show_status(LocaleManager.L("game.connected_waiting", {"ip": ip, "port": port}))
 
 # 主机点「开始游戏」→ 推送配置给客户端 + 双方开始对局
 func _on_room_start_requested() -> void:
@@ -391,7 +394,7 @@ func _on_room_start_requested() -> void:
 	NetSync.host_start_game(_time_setting, _piece_limit, _komi, _special_enabled)
 	_new_game()
 	_reinit_timer()
-	_show_status("对局开始 · 您执黑方 · 第 1 手")
+	_show_status(LocaleManager.L("game.start_black"))
 
 # 主机取消等待 → 关闭房间
 func _on_room_wait_canceled() -> void:
@@ -410,7 +413,7 @@ func _on_net_game_started(time_setting: Dictionary, piece_limit: int, komi: floa
 	_special_enabled = special_enabled
 	_new_game()
 	_reinit_timer()
-	_show_status("对局开始 · 您执白方 · 第 1 手")
+	_show_status(LocaleManager.L("game.start_white"))
 
 # 模式选择处理
 func _on_mode_selected(mode: String, difficulty: int) -> void:
@@ -501,21 +504,21 @@ func _update_role_names() -> void:
 		return
 	if _pve_mode:
 		# PvE: 玩家执黑=你，AI执白=AI·难度
-		black_score_panel.set_role_name("你")
-		white_score_panel.set_role_name("AI·" + AIManager.difficulty_name(_ai_difficulty))
+		black_score_panel.set_role_name(LocaleManager.L("game.player_you"))
+		white_score_panel.set_role_name(LocaleManager.L("game.ai_role_prefix") + LocaleManager.L(AIDifficulty.name_key(_ai_difficulty)))
 		black_score_panel.set_controllable(true)
 		white_score_panel.set_controllable(false)
 	elif _online_mode:
 		# 联机: 本地颜色方=你，对端=对手
 		var local_c: int = NetworkManager.local_color
 		if local_c == Const.BLACK:
-			black_score_panel.set_role_name("你")
-			white_score_panel.set_role_name("对手")
+			black_score_panel.set_role_name(LocaleManager.L("game.player_you"))
+			white_score_panel.set_role_name(LocaleManager.L("game.player_opponent"))
 			black_score_panel.set_controllable(true)
 			white_score_panel.set_controllable(false)
 		else:
-			black_score_panel.set_role_name("对手")
-			white_score_panel.set_role_name("你")
+			black_score_panel.set_role_name(LocaleManager.L("game.player_opponent"))
+			white_score_panel.set_role_name(LocaleManager.L("game.player_you"))
 			black_score_panel.set_controllable(false)
 			white_score_panel.set_controllable(true)
 	else:
@@ -535,7 +538,7 @@ func _on_new_game() -> void:
 		NetSync.host_broadcast_new_game(_komi, _special_enabled, _piece_limit)
 	elif _online_mode and not NetworkManager.is_host():
 		# 联机客户端：新对局由主机发起，客户端等待广播
-		_show_status("等待主机开始新对局…")
+		_show_status(LocaleManager.L("game.waiting_host_start"))
 	else:
 		_new_game()
 
@@ -544,12 +547,12 @@ func _on_pass() -> void:
 		return
 	# 布局阶段禁止虚手（必须完成布局落子）
 	if _deploy_phase:
-		_show_error("布局阶段请先完成布局落子")
+		_show_error(LocaleManager.L("game.deploy_phase_no_pass"))
 		return
 	if _online_mode:
 		# 联机：仅本地玩家轮次可操作，通过 NetSync 路由
 		if session.to_move != NetworkManager.local_color:
-			_show_error("非您的回合")
+			_show_error(LocaleManager.L("game.not_your_turn"))
 			return
 		var out: Dictionary = NetSync.local_do_pass()
 		if not out.ok:
@@ -557,7 +560,7 @@ func _on_pass() -> void:
 		return
 	# PvE：仅玩家回合可虚手（否则会替 AI 虚手，可能造成"单方连续虚手"误判与误触终局）
 	if _pve_mode and session.to_move != Const.BLACK:
-		_show_error("非您的回合")
+		_show_error(LocaleManager.L("game.not_your_turn"))
 		return
 	var out: Dictionary = session.do_pass(session.to_move)
 	if not out.ok:
@@ -568,18 +571,19 @@ func _on_resign() -> void:
 		return
 	# 布局阶段禁止认输（对局尚未正式开局）
 	if _deploy_phase:
-		_show_error("布局阶段无法认输")
+		_show_error(LocaleManager.L("game.deploy_phase_no_resign"))
 		return
 	if _online_mode:
 		# 联机认输：通知对端
 		NetSync.local_resign()
 	# 本地认输处理（联机与非联机统一）
 	var loser: int = NetworkManager.local_color if _online_mode else session.to_move
-	var winner_str: String = "白方胜" if loser == Const.BLACK else "黑方胜"
+	var winner_str: String = LocaleManager.L("result.win_white") if loser == Const.BLACK else LocaleManager.L("result.win_black")
 	session.game_over = true
-	var result: Dictionary = session.final_result("认输")
+	var result: Dictionary = session.final_result(LocaleManager.L("result.reason_resign"))
 	result["winner"] = winner_str
-	result["reason"] = "%s认输" % ("黑方" if loser == Const.BLACK else "白方")
+	result["winner_color"] = Const.opponent(loser)
+	result["reason"] = LocaleManager.L("result.resign_format", {"who": LocaleManager.L("game.color_black") if loser == Const.BLACK else LocaleManager.L("game.color_white")})
 	session.game_ended.emit(result)
 	_update_status()
 	_update_controls()
@@ -589,35 +593,35 @@ func _on_deploy_button() -> void:
 		return
 	# 布局阶段禁止部署特种部队（正式开局后才可用）
 	if _deploy_phase:
-		_show_error("布局阶段暂不能部署特种部队")
+		_show_error(LocaleManager.L("game.deploy_phase_no_deploy"))
 		return
 	if _online_mode and session.to_move != NetworkManager.local_color:
-		_show_error("非您的回合")
+		_show_error(LocaleManager.L("game.not_your_turn"))
 		return
 	_deploy_mode = not _deploy_mode
 	if board_view != null:
 		board_view.set_deploy_mode(_deploy_mode)
 	_update_controls()
 	if _deploy_mode:
-		_show_status("选择部署特种部队的位置（点击棋盘）")
+		_show_status(LocaleManager.L("game.select_deploy_pos"))
 	else:
-		_show_status("已取消部署")
+		_show_status(LocaleManager.L("game.deploy_canceled"))
 
 func _on_undo() -> void:
 	# 布局阶段禁止悔棋（保持布局进度一致）
 	if _deploy_phase:
-		_show_status("布局阶段暂不支持悔棋")
+		_show_status(LocaleManager.L("game.deploy_phase_no_undo"))
 		return
 	# 联机模式禁用悔棋（防止状态不一致）
 	if _online_mode:
-		_show_status("联机模式不支持悔棋")
+		_show_status(LocaleManager.L("game.online_no_undo"))
 		return
 	# PvE 模式：AI 思考中禁用悔棋（避免与异步线程冲突）
 	if _pve_mode and _ai_thinking:
-		_show_status("AI 思考中，请稍候")
+		_show_status(LocaleManager.L("game.ai_thinking"))
 		return
 	if session == null or not session.can_undo():
-		_show_status("无可悔棋历史")
+		_show_status(LocaleManager.L("game.no_undo_history"))
 		return
 	# PvE 模式：连悔两手（AI + 玩家），让玩家可重新决策
 	var undo_count: int = 1
@@ -668,7 +672,7 @@ func _on_undo() -> void:
 	# 计时器切回当前行棋方
 	if _timer != null and not session.game_over:
 		_timer.switch_to(session.to_move)
-	_show_status("已悔棋 %d 手" % actual)
+	_show_status(LocaleManager.L("game.undone_n_moves", {"n": actual}))
 	_update_controls()
 	# 同步行棋记录到两侧得分板日志（悔棋后列表更新）
 	if black_score_panel != null and black_score_panel.has_method("set_log_entries"):
@@ -690,13 +694,13 @@ func _on_cell_clicked(row: int, col: int) -> void:
 		return
 	# 联机模式：仅本地玩家轮次可操作
 	if _online_mode and session.to_move != NetworkManager.local_color:
-		_show_error("非您的回合")
+		_show_error(LocaleManager.L("game.not_your_turn"))
 		return
 	# 布局阶段：双方轮流在己方领土各布 2 子（己方地盘=己方领土，不含边境线）
 	if _deploy_phase:
 		var mover: int = session.to_move
 		if Const.zone_of_row(row) != Const.own_zone(mover):
-			_show_error("布局阶段只能在己方领土落子")
+			_show_error(LocaleManager.L("game.deploy_zone_error"))
 			return
 		var out: Dictionary
 		if _online_mode:
@@ -773,11 +777,11 @@ func _on_move_committed(outcome: Dictionary) -> void:
 		if annihilate_count > 0:
 			var gain: int = annihilate_count * 2
 			var popup_pos: Vector2i = outcome.captures[0]
-			EffectsPlayer.play_score_popup("歼灭 +%d" % gain, popup_pos, mover_color, "annihilate")
+			EffectsPlayer.play_score_popup(LocaleManager.L("game.score_annihilate", {"n": gain}), popup_pos, mover_color, "annihilate")
 		# 战损扣减动画（被提方视角）
 		if war_loss_count > 0:
 			var loss: int = war_loss_count * 2
-			EffectsPlayer.play_score_popup("战损 -%d" % loss, war_loss_pos, captured_c, "territory_lost")
+			EffectsPlayer.play_score_popup(LocaleManager.L("game.score_loss", {"n": loss}), war_loss_pos, captured_c, "territory_lost")
 	if outcome.get("deployed", false):
 		# 部署特种部队：用部署特效（己方视角下在位置画，对方视角下画在棋盘中心避免泄露）
 		EffectsPlayer.play_special_deploy(mover_color, outcome.placed)
@@ -821,12 +825,13 @@ func _on_time_changed(_color: int) -> void:
 func _on_time_out(color: int) -> void:
 	if session == null or session.game_over:
 		return
-	var winner_str: String = "白方胜" if color == Const.BLACK else "黑方胜"
-	var loser_str: String = "黑方" if color == Const.BLACK else "白方"
+	var winner_str: String = LocaleManager.L("result.win_white") if color == Const.BLACK else LocaleManager.L("result.win_black")
+	var loser_str: String = LocaleManager.L("game.color_black") if color == Const.BLACK else LocaleManager.L("game.color_white")
 	session.game_over = true
-	var result: Dictionary = session.final_result("超时")
+	var result: Dictionary = session.final_result(LocaleManager.L("result.reason_timeout"))
 	result["winner"] = winner_str
-	result["reason"] = "%s超时" % loser_str
+	result["winner_color"] = Const.opponent(color)
+	result["reason"] = LocaleManager.L("result.timeout_format", {"who": loser_str})
 	session.game_ended.emit(result)
 	_update_status()
 	_update_controls()
@@ -892,14 +897,14 @@ func _record_log_entry(outcome: Dictionary) -> void:
 # 获取当前角色名映射 {Const.BLACK: name, Const.WHITE: name}，供日志弹窗显示
 func _get_role_names() -> Dictionary:
 	if _pve_mode:
-		return {Const.BLACK: "你", Const.WHITE: "AI·" + AIManager.difficulty_name(_ai_difficulty)}
+		return {Const.BLACK: LocaleManager.L("game.player_you"), Const.WHITE: LocaleManager.L("game.ai_role_prefix") + LocaleManager.L(AIDifficulty.name_key(_ai_difficulty))}
 	elif _online_mode:
 		var local_c: int = NetworkManager.local_color
 		if local_c == Const.BLACK:
-			return {Const.BLACK: "你", Const.WHITE: "对手"}
+			return {Const.BLACK: LocaleManager.L("game.player_you"), Const.WHITE: LocaleManager.L("game.player_opponent")}
 		else:
-			return {Const.BLACK: "对手", Const.WHITE: "你"}
-	return {Const.BLACK: "黑方", Const.WHITE: "白方"}
+			return {Const.BLACK: LocaleManager.L("game.player_opponent"), Const.WHITE: LocaleManager.L("game.player_you")}
+	return {Const.BLACK: LocaleManager.L("game.color_black"), Const.WHITE: LocaleManager.L("game.color_white")}
 
 # 切换对局日志覆盖弹窗（L 键）
 func _toggle_log_overlay() -> void:
@@ -997,7 +1002,7 @@ func _detect_and_trigger_territory_siege() -> void:
 				EffectsPlayer.play_territory_formed(new_pts, c)
 				# 围空得分文字：按攻击区实际计分（规则4.2：仅对方领土/边境计分）
 				var territory_gain: int = _territory_points(new_pts, c)
-				EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, new_pts[0], c, "territory")
+				EffectsPlayer.play_score_popup(LocaleManager.L("game.score_territory", {"n": territory_gain}), new_pts[0], c, "territory")
 			if matched_prev_idx.has(c):
 				matched_prev_idx[c][best_idx] = true
 			else:
@@ -1007,7 +1012,7 @@ func _detect_and_trigger_territory_siege() -> void:
 			if not curr_pts.is_empty():
 				EffectsPlayer.play_territory_formed(curr_pts, c)
 				var territory_gain: int = _territory_points(curr_pts, c)
-				EffectsPlayer.play_score_popup("围空 +%d" % territory_gain, curr_pts[0], c, "territory")
+				EffectsPlayer.play_score_popup(LocaleManager.L("game.score_territory", {"n": territory_gain}), curr_pts[0], c, "territory")
 	# 未匹配的 prev 围空 → 失守（消失或部分失去）
 	for c in prev_by_color.keys():
 		var prev_list: Array = prev_by_color[c]
@@ -1021,7 +1026,7 @@ func _detect_and_trigger_territory_siege() -> void:
 				EffectsPlayer.play_territory_lost(lost_pts, c)
 				# 围空失守扣减文字：按攻击区实际计分
 				var territory_loss: int = _territory_points(lost_pts, c)
-				EffectsPlayer.play_score_popup("围空 -%d" % territory_loss, lost_pts[0], c, "territory_lost")
+				EffectsPlayer.play_score_popup(LocaleManager.L("game.score_territory_loss", {"n": territory_loss}), lost_pts[0], c, "territory_lost")
 	_prev_enclosures = curr_encs.duplicate(true)
 	# 2. 围困变化检测
 	var curr_sieged: Dictionary = _collect_sieged_stones()
@@ -1044,10 +1049,10 @@ func _detect_and_trigger_territory_siege() -> void:
 		var first_pos: Vector2i = new_sieged[0]
 		var victim_color: int = session.board.get_at(first_pos.y, first_pos.x)
 		var sieger_color: int = Const.opponent(victim_color)
-		EffectsPlayer.play_score_popup("围困 +%d" % siege_gain, first_pos, sieger_color, "siege")
+		EffectsPlayer.play_score_popup(LocaleManager.L("game.score_siege", {"n": siege_gain}), first_pos, sieger_color, "siege")
 		# 被围困方活子分扣减（规则：活→围，进攻方活子分 -1/子）
 		if victim_color != Const.EMPTY:
-			EffectsPlayer.play_score_popup("活子 -%d" % siege_gain, first_pos, victim_color, "siege_victim")
+			EffectsPlayer.play_score_popup(LocaleManager.L("game.score_siege_victim", {"n": siege_gain}), first_pos, victim_color, "siege_victim")
 	if not broken_sieged.is_empty():
 		EffectsPlayer.play_siege_broken(broken_sieged)
 		# 围困解除扣减文字：每次解除都显示（仅当脱困棋子仍存活时）
@@ -1056,7 +1061,7 @@ func _detect_and_trigger_territory_siege() -> void:
 		if victim_c != Const.EMPTY:
 			var sieger_c: int = Const.opponent(victim_c)
 			var siege_loss: int = broken_sieged.size()
-			EffectsPlayer.play_score_popup("围困 -%d" % siege_loss, broken_pos, sieger_c, "siege_broken")
+			EffectsPlayer.play_score_popup(LocaleManager.L("game.score_siege_broken", {"n": siege_loss}), broken_pos, sieger_c, "siege_broken")
 	_prev_sieged_stones = curr_sieged
 
 # ===== PvE 模式 =====
@@ -1419,12 +1424,12 @@ func start_online_host(port: int) -> bool:
 	_stop_pve_and_ai()
 	var ok: bool = NetworkManager.host_game(port)
 	if not ok:
-		_show_status("建主失败（端口 %d 可能被占用）" % port)
+		_show_status(LocaleManager.L("game.room_host_failed", {"port": port}))
 		return false
 	_online_mode = true
 	# 主机执黑，等待客户端加入
 	# 注意：不在此处 _new_game()，避免计时器启动；待主机点"开始游戏"后再开局
-	_show_status("已建主（端口 %d），等待对手加入…" % port)
+	_show_status(LocaleManager.L("game.room_hosted", {"port": port}))
 	return true
 
 # 作为客户端加入联机对战
@@ -1432,11 +1437,11 @@ func start_online_client(ip: String, port: int) -> bool:
 	_stop_pve_and_ai()
 	var ok: bool = NetworkManager.join_game(ip, port)
 	if not ok:
-		_show_status("加入失败，请检查 IP/端口")
+		_show_status(LocaleManager.L("game.join_failed"))
 		return false
 	_online_mode = true
 	_update_role_names()
-	_show_status("正在连接 %s:%d…" % [ip, port])
+	_show_status(LocaleManager.L("game.connecting", {"ip": ip, "port": port}))
 	return true
 
 # 退出联机模式
@@ -1477,12 +1482,12 @@ func _on_net_peer_joined(_peer_id: int) -> void:
 	if NetworkManager.is_host():
 		if _room_wait_dlg != null and _room_wait_dlg.has_method("set_peer_joined"):
 			_room_wait_dlg.set_peer_joined(true)
-		_show_status("对手已加入，点击「开始游戏」开始对局")
+		_show_status(LocaleManager.L("game.peer_joined_ready"))
 
 # 客户端连接成功 → 等待主机开始游戏
 func _on_net_joined() -> void:
 	if not NetworkManager.is_host():
-		_show_status("已连接主机，等待主机开始游戏…")
+		_show_status(LocaleManager.L("game.connected_to_host"))
 
 func _on_net_peer_disconnected(_peer_id: int) -> void:
 	if NetworkManager.is_host():
@@ -1491,9 +1496,10 @@ func _on_net_peer_disconnected(_peer_id: int) -> void:
 		# 结束当前对局（若进行中）
 		if session != null and not session.game_over:
 			session.game_over = true
-			var result: Dictionary = session.final_result("对手断开")
+			var result: Dictionary = session.final_result(LocaleManager.L("result.reason_disconnect"))
 			result["winner"] = ""  # 无胜负，异常终止
-			result["reason"] = "对手断开连接"
+			result["winner_color"] = -1
+			result["reason"] = LocaleManager.L("game.opponent_disconnect_reason")
 			session.game_ended.emit(result)
 		# 重新弹出等待对话框（若已被销毁）
 		if _room_wait_dlg == null:
@@ -1506,29 +1512,30 @@ func _on_net_peer_disconnected(_peer_id: int) -> void:
 			# 对话框仍存在，重置为"等待对手"状态
 			if _room_wait_dlg.has_method("set_peer_joined"):
 				_room_wait_dlg.set_peer_joined(false)
-		_show_status("对手已断开，等待新对手加入…")
+		_show_status(LocaleManager.L("game.opponent_disconnected"))
 	else:
 		# 客户端：主机断开 → 彻底退出联机
-		_show_status("主机已断开连接")
+		_show_status(LocaleManager.L("game.host_disconnected"))
 		_online_mode = false
 		NetSync.active = false
 		control_panel.update_online_state(false)
 		if session != null and not session.game_over:
 			session.game_over = true
-			var result: Dictionary = session.final_result("主机断开")
+			var result: Dictionary = session.final_result(LocaleManager.L("game.host_disconnect_reason"))
 			result["winner"] = ""
-			result["reason"] = "主机断开连接"
+			result["winner_color"] = -1
+			result["reason"] = LocaleManager.L("game.host_disconnect_reason")
 			session.game_ended.emit(result)
 
 func _on_net_failed() -> void:
-	_show_status("连接失败")
+	_show_status(LocaleManager.L("game.connection_failed"))
 	_online_mode = false
 	NetSync.active = false
 	control_panel.update_online_state(false)
 
 func _on_net_closed() -> void:
 	if _online_mode:
-		_show_status("连接已关闭")
+		_show_status(LocaleManager.L("game.connection_closed"))
 		_online_mode = false
 		NetSync.active = false
 		control_panel.update_online_state(false)
@@ -1539,10 +1546,10 @@ func _on_net_new_game_requested(komi: float, special_enabled: bool, piece_limit:
 	_komi = komi
 	_piece_limit = piece_limit
 	_new_game()
-	_show_status("新对局开始（贴目 %.1f）· 您执白方" % komi)
+	_show_status(LocaleManager.L("game.new_game_started_white", {"komi": "%.1f" % komi}))
 
 func _on_net_sync_mismatch() -> void:
-	_show_status("状态同步异常，请双方重新开始对局")
+	_show_status(LocaleManager.L("game.sync_mismatch"))
 	Log.w("联机状态同步异常")
 
 # ===== 启动配置（由 Main 调用）=====

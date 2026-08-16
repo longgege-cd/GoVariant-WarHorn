@@ -64,6 +64,21 @@ static func name_of(d: int) -> String:
 			return "大师"
 	return "未知"
 
+# 难度显示名翻译键（i18n）
+static func name_key(d: int) -> String:
+	match d:
+		Difficulty.EASY:
+			return "ai.easy"
+		Difficulty.NORMAL:
+			return "ai.normal"
+		Difficulty.HARD:
+			return "ai.hard"
+		Difficulty.EXPERT:
+			return "ai.expert"
+		Difficulty.MASTER:
+			return "ai.master"
+	return "ai.unknown"
+
 # 难度描述（用于二级选择页）
 static func desc_of(d: int) -> String:
 	match d:
@@ -77,4 +92,19 @@ static func desc_of(d: int) -> String:
 			return "标准搜索+关键局面MCTS"
 		Difficulty.MASTER:
 			return "更深搜索+更多模拟"
+	return ""
+
+# 难度描述翻译键（i18n）
+static func desc_key(d: int) -> String:
+	match d:
+		Difficulty.EASY:
+			return "ai.easy_desc"
+		Difficulty.NORMAL:
+			return "ai.normal_desc"
+		Difficulty.HARD:
+			return "ai.hard_desc"
+		Difficulty.EXPERT:
+			return "ai.expert_desc"
+		Difficulty.MASTER:
+			return "ai.master_desc"
 	return ""

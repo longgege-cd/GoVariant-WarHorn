@@ -43,8 +43,8 @@ func _format_move(outcome: Dictionary) -> String:
 	var cap: int = 0
 	if outcome.has("captures"):
 		cap = outcome.captures.size()
-	var cap_str: String = " 提%d" % cap if cap > 0 else ""
-	var bnc_str: String = " 弹子" if outcome.get("bounced", false) else ""
-	var pass_str: String = " 虚手" if outcome.get("passed", false) else ""
-	var dep_str: String = " 部署" if outcome.get("deployed", false) else ""
+	var cap_str: String = LocaleManager.L("history.capture_suffix", {"n": cap}) if cap > 0 else ""
+	var bnc_str: String = LocaleManager.L("history.bounce_suffix") if outcome.get("bounced", false) else ""
+	var pass_str: String = LocaleManager.L("history.pass_suffix") if outcome.get("passed", false) else ""
+	var dep_str: String = LocaleManager.L("history.deploy_suffix") if outcome.get("deployed", false) else ""
 	return "%3d. %s%s%s%s%s" % [ply, color_str, cap_str, bnc_str, pass_str, dep_str]

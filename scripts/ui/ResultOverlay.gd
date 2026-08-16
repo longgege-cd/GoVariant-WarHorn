@@ -33,10 +33,16 @@ static func create(result: Dictionary) -> Control:
 	return inst
 
 func _build() -> void:
-	var winner_str: String = _result.get("winner", "和棋")
-	var is_black_win: bool = winner_str.find("黑") >= 0
-	var is_white_win: bool = winner_str.find("白") >= 0
-	var winner_color: int = Const.BLACK if is_black_win else (Const.WHITE if is_white_win else -1)
+	# 胜方颜色：优先用 result["winner_color"]（语言无关）；旧结果兜底用中文匹配
+	var winner_color: int = _result.get("winner_color", -1)
+	if winner_color < 0:
+		var winner_str_legacy: String = _result.get("winner", "和棋")
+		if winner_str_legacy.find("黑") >= 0:
+			winner_color = Const.BLACK
+		elif winner_str_legacy.find("白") >= 0:
+			winner_color = Const.WHITE
+	var winner_text: String = LocaleManager.L("result.win_black") if winner_color == Const.BLACK \
+		else (LocaleManager.L("result.win_white") if winner_color == Const.WHITE else LocaleManager.L("result.draw"))
 
 	# 遮罩（更深，突出胜利时刻）
 	_overlay = ColorRect.new()
@@ -92,7 +98,7 @@ func _build() -> void:
 	title_row.add_child(_winner_circle)
 
 	_winner_label = Label.new()
-	_winner_label.text = winner_str
+	_winner_label.text = winner_text
 	_winner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_winner_label.add_theme_font_size_override("font_size", 42)
 	_winner_label.add_theme_color_override("font_color", UITheme.C_GOLD_BRIGHT if winner_color >= 0 else UITheme.C_TEXT)
@@ -124,14 +130,14 @@ func _build() -> void:
 	_btn_row.add_theme_constant_override("separation", 16)
 	vbox.add_child(_btn_row)
 
-	var again_btn := _make_button("再 来 一 局")
+	var again_btn := _make_button(LocaleManager.L("result.play_again"))
 	again_btn.pressed.connect(func():
 		new_game_requested.emit()
 		queue_free()
 	)
 	_btn_row.add_child(again_btn)
 
-	var menu_btn := _make_button("返 回 主 菜 单")
+	var menu_btn := _make_button(LocaleManager.L("result.back_to_main"))
 	menu_btn.pressed.connect(func():
 		back_to_main_menu_requested.emit()
 		queue_free()
@@ -209,7 +215,9 @@ func _draw_score_comparison(v: Control) -> void:
 		v.draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(black_w, bar_h)), Color(0.2, 0.15, 0.05, 0.95), true)
 	v.draw_rect(Rect2(Vector2(bar_x, black_y), Vector2(bar_w, bar_h)), UITheme.C_GOLD_DIM, false, 1.0)
 	# 黑方标签
-	v.draw_string(_default_font(), Vector2(bar_x - 4, black_y + bar_h * 0.75), "黑",
+	var black_short: String = LocaleManager.L("result.color_black_short")
+	var white_short: String = LocaleManager.L("result.color_white_short")
+	v.draw_string(_default_font(), Vector2(bar_x - 4, black_y + bar_h * 0.75), black_short,
 		HORIZONTAL_ALIGNMENT_RIGHT, -1, 14, UITheme.C_GOLD)
 	v.draw_string(_default_font(), Vector2(bar_x + bar_w + 8, black_y + bar_h * 0.75), "%.1f" % black_total,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UITheme.C_GOLD)
@@ -220,7 +228,7 @@ func _draw_score_comparison(v: Control) -> void:
 		v.draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(white_w, bar_h)), Color(0.85, 0.85, 0.85, 0.7), true)
 	v.draw_rect(Rect2(Vector2(bar_x, white_y), Vector2(bar_w, bar_h)), UITheme.C_GOLD_DIM, false, 1.0)
 	# 白方标签
-	v.draw_string(_default_font(), Vector2(bar_x - 4, white_y + bar_h * 0.75), "白",
+	v.draw_string(_default_font(), Vector2(bar_x - 4, white_y + bar_h * 0.75), white_short,
 		HORIZONTAL_ALIGNMENT_RIGHT, -1, 14, Color(0.9, 0.9, 0.9))
 	v.draw_string(_default_font(), Vector2(bar_x + bar_w + 8, white_y + bar_h * 0.75), "%.1f" % white_total,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.9, 0.9, 0.9))

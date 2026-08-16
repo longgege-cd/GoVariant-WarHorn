@@ -11,8 +11,8 @@ signal join_requested  # 玩家选择加入房间
 const UITheme = preload("res://scripts/ui/UITheme.gd")
 
 func _ready() -> void:
-	title = "联机对战"
-	ok_button_text = "关闭"
+	title = LocaleManager.L("net.menu_title")
+	ok_button_text = LocaleManager.L("net.menu_close")
 	_build_ui()
 	confirmed.connect(func(): hide())
 
@@ -22,13 +22,13 @@ func _build_ui() -> void:
 	add_child(vbox)
 	# 说明
 	var hint := Label.new()
-	hint.text = "选择您的角色："
+	hint.text = LocaleManager.L("net.menu_role")
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
 	vbox.add_child(hint)
 	# 建立房间按钮
 	var host_btn := Button.new()
-	host_btn.text = "建立房间（黑方 · 主机）"
+	host_btn.text = LocaleManager.L("net.menu_host")
 	host_btn.custom_minimum_size = Vector2(280, 40)
 	host_btn.add_theme_font_size_override("font_size", 14)
 	host_btn.add_theme_color_override("font_color", UITheme.C_GOLD)
@@ -40,7 +40,7 @@ func _build_ui() -> void:
 	vbox.add_child(host_btn)
 	# 加入房间按钮
 	var join_btn := Button.new()
-	join_btn.text = "加入房间（白方 · 客户端）"
+	join_btn.text = LocaleManager.L("net.menu_join")
 	join_btn.custom_minimum_size = Vector2(280, 40)
 	join_btn.add_theme_font_size_override("font_size", 14)
 	join_btn.add_theme_color_override("font_color", UITheme.C_GOLD)

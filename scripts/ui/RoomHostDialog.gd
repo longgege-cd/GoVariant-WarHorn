@@ -22,9 +22,9 @@ var _komi_value: float = Const.KOMI_DEFAULT
 var _port_edit: LineEdit
 
 func _ready() -> void:
-	title = "建立房间 · 房间设置"
-	ok_button_text = "建立房间"
-	add_cancel_button("取消")
+	title = LocaleManager.L("net.host_title")
+	ok_button_text = LocaleManager.L("net.host_create")
+	add_cancel_button(LocaleManager.L("net.host_cancel"))
 	_build_ui()
 	confirmed.connect(func(): room_created.emit(_collect_time_setting(), _collect_piece_limit(), _komi_value))
 
@@ -34,7 +34,7 @@ func _build_ui() -> void:
 	add_child(vbox)
 	# 说明
 	var hint := Label.new()
-	hint.text = "您将作为黑方（主机）建立房间\n设置完成后点击「建立房间」等待白方加入"
+	hint.text = LocaleManager.L("net.host_role_hint")
 	hint.add_theme_font_size_override("font_size", 12)
 	hint.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
 	vbox.add_child(hint)
@@ -48,7 +48,7 @@ func _build_ui() -> void:
 	time_col.add_theme_constant_override("separation", 2)
 	cfg_row.add_child(time_col)
 	var time_title := Label.new()
-	time_title.text = "思考时间"
+	time_title.text = LocaleManager.L("net.host_thinking_time")
 	time_title.add_theme_font_size_override("font_size", 11)
 	time_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
 	time_col.add_child(time_title)
@@ -64,7 +64,7 @@ func _build_ui() -> void:
 	piece_col.add_theme_constant_override("separation", 2)
 	cfg_row.add_child(piece_col)
 	var piece_title := Label.new()
-	piece_title.text = "兵力"
+	piece_title.text = LocaleManager.L("net.host_forces")
 	piece_title.add_theme_font_size_override("font_size", 11)
 	piece_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
 	piece_col.add_child(piece_title)
@@ -72,7 +72,7 @@ func _build_ui() -> void:
 	_piece_option.custom_minimum_size = Vector2(90, 28)
 	_piece_option.add_theme_font_size_override("font_size", 12)
 	for p in StartMenu.PIECE_ENTRIES:
-		_piece_option.add_item("%d 子" % p)
+		_piece_option.add_item(LocaleManager.L("main_menu.forces_value", {"n": p}))
 	_piece_option.select(StartMenu.DEFAULT_PIECE_IDX)
 	piece_col.add_child(_piece_option)
 	# 贴目
@@ -80,7 +80,7 @@ func _build_ui() -> void:
 	komi_col.add_theme_constant_override("separation", 2)
 	cfg_row.add_child(komi_col)
 	var komi_title := Label.new()
-	komi_title.text = "贴目"
+	komi_title.text = LocaleManager.L("net.host_komi")
 	komi_title.add_theme_font_size_override("font_size", 11)
 	komi_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
 	komi_col.add_child(komi_title)
@@ -111,7 +111,7 @@ func _build_ui() -> void:
 	port_row.add_theme_constant_override("separation", 6)
 	vbox.add_child(port_row)
 	var port_label := Label.new()
-	port_label.text = "端口:"
+	port_label.text = LocaleManager.L("net.host_port")
 	port_label.custom_minimum_size = Vector2(40, 0)
 	port_row.add_child(port_label)
 	_port_edit = LineEdit.new()

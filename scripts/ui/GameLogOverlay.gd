@@ -67,7 +67,7 @@ func _build(entries: Array, role_names: Dictionary) -> void:
 
 	# 标题
 	var title := Label.new()
-	title.text = "对 局 日 志"
+	title.text = LocaleManager.L("log.title")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", UITheme.C_GOLD_BRIGHT)
@@ -75,7 +75,7 @@ func _build(entries: Array, role_names: Dictionary) -> void:
 
 	# 表头
 	var header := Label.new()
-	header.text = "  手  | 方  | 动作       | 位置  | 提子 | 得分变化"
+	header.text = LocaleManager.L("log.header")
 	header.add_theme_font_size_override("font_size", 12)
 	header.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
 	vbox.add_child(header)
@@ -99,7 +99,7 @@ func _build(entries: Array, role_names: Dictionary) -> void:
 	# 填充条目
 	if entries.is_empty():
 		var empty := Label.new()
-		empty.text = "（暂无对局记录）"
+		empty.text = LocaleManager.L("log.empty")
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.add_theme_font_size_override("font_size", 14)
 		empty.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
@@ -113,7 +113,7 @@ func _build(entries: Array, role_names: Dictionary) -> void:
 
 	# 底部提示
 	var hint := Label.new()
-	hint.text = "L / ESC 关闭"
+	hint.text = LocaleManager.L("log.close_hint")
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 11)
 	hint.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
@@ -126,13 +126,13 @@ func _build(entries: Array, role_names: Dictionary) -> void:
 func _make_entry_label(e: Dictionary, role_names: Dictionary) -> Label:
 	var ply: int = e.get("ply", 0)
 	var color: int = e.get("color", Const.BLACK)
-	var side_name: String = role_names.get(color, "黑方" if color == Const.BLACK else "白方")
+	var side_name: String = role_names.get(color, LocaleManager.L("game.color_black") if color == Const.BLACK else LocaleManager.L("game.color_white"))
 	var action: String = _action_label(e)
 	var pos_str: String = _pos_label(e)
 	var cap: int = e.get("captures", 0)
 	var score_str: String = _score_label(e)
 	var text: String = "%3d. | %-5s | %-8s | %-5s | %s%d | %s" % [
-		ply, side_name, action, pos_str, "提" if cap > 0 else "  ", cap, score_str
+		ply, side_name, action, pos_str, LocaleManager.L("log.action_capture") if cap > 0 else "  ", cap, score_str
 	]
 	var lbl := Label.new()
 	lbl.text = text
@@ -142,12 +142,12 @@ func _make_entry_label(e: Dictionary, role_names: Dictionary) -> Label:
 
 func _action_label(e: Dictionary) -> String:
 	if e.get("passed", false):
-		return "虚手"
+		return LocaleManager.L("score.log_pass")
 	if e.get("deployed", false):
-		return "部署特种"
+		return LocaleManager.L("log.action_deploy")
 	if e.get("bounced", false):
-		return "落子·弹子"
-	return "落子"
+		return LocaleManager.L("log.action_bounce")
+	return LocaleManager.L("score.log_move")
 
 func _pos_label(e: Dictionary) -> String:
 	var placed = e.get("placed", null)

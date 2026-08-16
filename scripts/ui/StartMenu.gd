@@ -17,25 +17,25 @@ signal quit_requested
 const AIManager = preload("res://scripts/ai/AIManager.gd")
 
 const MODE_ENTRIES := [
-	{"name": "本地双人", "desc": "同一屏幕对弈", "mode": "pvp", "diff": 0},
-	{"name": "人机对战", "desc": "选择 AI 难度", "mode": "pve", "diff": -1},
-	{"name": "联机对战", "desc": "主机或加入", "mode": "online", "diff": 0},
+	{"name_key": "mode.pvp", "desc_key": "mode.pvp_desc", "mode": "pvp", "diff": 0},
+	{"name_key": "mode.pve", "desc_key": "mode.pve_desc", "mode": "pve", "diff": -1},
+	{"name_key": "mode.online", "desc_key": "mode.online_desc", "mode": "online", "diff": 0},
 ]
 
 # 思考时间选项（分业余/专业两组，参考传统围棋设定）
-# { "label": 显示名, "group": "amateur"|"pro", "main": 秒(-1=无限), "byoyomi": 读秒次数, "byoyomi_duration": 读秒时长 }
+# { "label_key": 翻译键, "group": "amateur"|"pro", "main": 秒(-1=无限), "byoyomi": 读秒次数, "byoyomi_duration": 读秒时长 }
 const TIME_ENTRIES := [
 	# 业余组
-	{"label": "无限制", "group": "amateur", "main": -1.0, "byoyomi": 0, "byoyomi_duration": 0.0},
-	{"label": "闪电 5分", "group": "amateur", "main": 300.0, "byoyomi": 0, "byoyomi_duration": 0.0},
-	{"label": "快棋 15分", "group": "amateur", "main": 900.0, "byoyomi": 3, "byoyomi_duration": 30.0},
-	{"label": "标准 30分", "group": "amateur", "main": 1800.0, "byoyomi": 3, "byoyomi_duration": 30.0},
-	{"label": "业余 60分", "group": "amateur", "main": 3600.0, "byoyomi": 5, "byoyomi_duration": 30.0},
+	{"label_key": "main_menu.time_unlimited", "group": "amateur", "main": -1.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label_key": "main_menu.time_blitz", "group": "amateur", "main": 300.0, "byoyomi": 0, "byoyomi_duration": 0.0},
+	{"label_key": "main_menu.time_rapid", "group": "amateur", "main": 900.0, "byoyomi": 3, "byoyomi_duration": 30.0},
+	{"label_key": "main_menu.time_standard", "group": "amateur", "main": 1800.0, "byoyomi": 3, "byoyomi_duration": 30.0},
+	{"label_key": "main_menu.time_amateur_long", "group": "amateur", "main": 3600.0, "byoyomi": 5, "byoyomi_duration": 30.0},
 	# 专业组
-	{"label": "快棋赛 1h", "group": "pro", "main": 3600.0, "byoyomi": 5, "byoyomi_duration": 30.0},
-	{"label": "普通赛 3h", "group": "pro", "main": 10800.0, "byoyomi": 5, "byoyomi_duration": 60.0},
-	{"label": "大赛 5h", "group": "pro", "main": 18000.0, "byoyomi": 5, "byoyomi_duration": 60.0},
-	{"label": "头衔战 8h", "group": "pro", "main": 28800.0, "byoyomi": 10, "byoyomi_duration": 60.0},
+	{"label_key": "main_menu.time_pro_rapid", "group": "pro", "main": 3600.0, "byoyomi": 5, "byoyomi_duration": 30.0},
+	{"label_key": "main_menu.time_pro_normal", "group": "pro", "main": 10800.0, "byoyomi": 5, "byoyomi_duration": 60.0},
+	{"label_key": "main_menu.time_pro_grand", "group": "pro", "main": 18000.0, "byoyomi": 5, "byoyomi_duration": 60.0},
+	{"label_key": "main_menu.time_pro_title", "group": "pro", "main": 28800.0, "byoyomi": 10, "byoyomi_duration": 60.0},
 ]
 
 # 贴目步进参数
@@ -54,6 +54,15 @@ var _time_items: Array = []  # 思考时间列表项节点
 var _komi_value: float = Const.KOMI_DEFAULT  # 当前贴目（默认 0.5）
 var _komi_label: Label = null  # 贴目显示标签
 var _piece_option: OptionButton = null  # 兵力下拉
+var _time_title: Label = null  # 思考时间标题
+var _time_group_labels: Array = []  # [{lbl, group}] 业余/专业组标签
+var _komi_title: Label = null  # 贴目标题
+var _piece_title: Label = null  # 兵力标题
+var _lang_btn: Button = null  # 语言切换按钮
+var _bottom_btns: Array = []  # [{btn, key}] 底部按钮（主题/回放/教程/退出）
+var _diff_title: Label = null  # 难度视图标题
+var _diff_buttons: Array = []  # [{btn, diff}] 难度按钮
+var _diff_back_btn: Button = null  # 难度视图返回按钮
 
 # 主菜单根容器与二级难度选择视图
 var _main_root: Control = null
@@ -69,8 +78,55 @@ var _bottom_row: HBoxContainer = null
 
 func _ready() -> void:
 	set_anchors_preset(PRESET_FULL_RECT)
+	LocaleManager.locale_changed.connect(_refresh_texts)
 	_build_ui()
 	_play_entrance()
+
+# 语言切换后刷新全部动态文本
+func _refresh_texts(_locale: String = "") -> void:
+	if _title != null:
+		_title.text = LocaleManager.L("main_menu.app_title")
+	if _subtitle != null:
+		_subtitle.text = LocaleManager.L("main_menu.app_subtitle")
+	if _time_title != null:
+		_time_title.text = LocaleManager.L("main_menu.thinking_time")
+	# 业余/专业组标签
+	for g in _time_group_labels:
+		g.lbl.text = LocaleManager.L("main_menu.amateur" if g.group == "amateur" else "main_menu.professional")
+	# 模式列表
+	for entry in _items:
+		var data: Dictionary = MODE_ENTRIES[entry.idx]
+		entry.name_lbl.text = LocaleManager.L(data.name_key)
+		entry.desc_lbl.text = LocaleManager.L(data.desc_key)
+	# 思考时间选项
+	for entry in _time_items:
+		var tdata: Dictionary = TIME_ENTRIES[entry.idx]
+		entry.btn.text = LocaleManager.L(tdata.label_key)
+	# 贴目/兵力标题与值
+	if _komi_title != null:
+		_komi_title.text = LocaleManager.L("main_menu.komi")
+	if _piece_title != null:
+		_piece_title.text = LocaleManager.L("main_menu.forces")
+	if _komi_label != null:
+		_komi_label.text = LocaleManager.L("main_menu.komi_value", {"n": "%.1f" % _komi_value})
+	if _piece_option != null:
+		_piece_option.clear()
+		for p in PIECE_ENTRIES:
+			_piece_option.add_item(LocaleManager.L("main_menu.forces_value", {"n": p}))
+		_piece_option.select(_selected_piece_idx)
+	# 底部按钮（主题/回放/教程/退出）
+	for b in _bottom_btns:
+		b.btn.text = LocaleManager.L(b.key)
+	# 语言按钮（显示当前语言名，点击切换）
+	if _lang_btn != null:
+		_lang_btn.text = LocaleManager.L("main_menu.lang_" + LocaleManager.current_locale)
+	# 二级难度视图
+	if _diff_title != null:
+		_diff_title.text = LocaleManager.L("main_menu.difficulty_label")
+	if _diff_back_btn != null:
+		_diff_back_btn.text = LocaleManager.L("main_menu.back")
+	for d in _diff_buttons:
+		d.btn.text = "%s  —  %s" % [LocaleManager.L(AIDifficulty.name_key(d.diff)), LocaleManager.L(AIDifficulty.desc_key(d.diff))]
 
 # ===== UI 构建 =====
 func _build_ui() -> void:
@@ -85,7 +141,7 @@ func _build_ui() -> void:
 	add_child(root)
 
 	_title = Label.new()
-	_title.text = "战争号角"
+	_title.text = LocaleManager.L("main_menu.app_title")
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.add_theme_font_size_override("font_size", 64)
 	_title.add_theme_color_override("font_color", UITheme.C_GOLD)
@@ -100,7 +156,7 @@ func _build_ui() -> void:
 	_add_spacer(root, 6)
 
 	_subtitle = Label.new()
-	_subtitle.text = "边境线"
+	_subtitle.text = LocaleManager.L("main_menu.app_subtitle")
 	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_subtitle.add_theme_font_size_override("font_size", 18)
 	_subtitle.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
@@ -127,19 +183,19 @@ func _build_ui() -> void:
 	_add_spacer(root, 20)
 
 	# 思考时间设置标签
-	var time_title := Label.new()
-	time_title.text = "思考时间"
-	time_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	time_title.add_theme_font_size_override("font_size", 14)
-	time_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
-	root.add_child(time_title)
+	_time_title = Label.new()
+	_time_title.text = LocaleManager.L("main_menu.thinking_time")
+	_time_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_time_title.add_theme_font_size_override("font_size", 14)
+	_time_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	root.add_child(_time_title)
 
 	_add_spacer(root, 6)
 
 	# 思考时间选项（分业余/专业两行横排）
-	_add_time_row(root, "业 余", "amateur")
+	_add_time_row(root, "amateur")
 	_add_spacer(root, 4)
-	_add_time_row(root, "专 业", "pro")
+	_add_time_row(root, "pro")
 
 	_add_spacer(root, 24)
 
@@ -155,12 +211,12 @@ func _build_ui() -> void:
 	komi_col.add_theme_constant_override("separation", 4)
 	komi_col.size_flags_horizontal = SIZE_SHRINK_CENTER
 	settings_row.add_child(komi_col)
-	var komi_title := Label.new()
-	komi_title.text = "贴  目"
-	komi_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	komi_title.add_theme_font_size_override("font_size", 12)
-	komi_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
-	komi_col.add_child(komi_title)
+	_komi_title = Label.new()
+	_komi_title.text = LocaleManager.L("main_menu.komi")
+	_komi_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_komi_title.add_theme_font_size_override("font_size", 12)
+	_komi_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	komi_col.add_child(_komi_title)
 	var komi_row := HBoxContainer.new()
 	komi_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	komi_row.add_theme_constant_override("separation", 6)
@@ -169,7 +225,7 @@ func _build_ui() -> void:
 	komi_dec.pressed.connect(func(): _on_komi_step(-1))
 	komi_row.add_child(komi_dec)
 	_komi_label = Label.new()
-	_komi_label.text = "%.1f 目" % _komi_value
+	_komi_label.text = LocaleManager.L("main_menu.komi_value", {"n": "%.1f" % _komi_value})
 	_komi_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_komi_label.custom_minimum_size = Vector2(72, 28)
 	_komi_label.add_theme_font_size_override("font_size", 15)
@@ -184,19 +240,19 @@ func _build_ui() -> void:
 	piece_col.add_theme_constant_override("separation", 4)
 	piece_col.size_flags_horizontal = SIZE_SHRINK_CENTER
 	settings_row.add_child(piece_col)
-	var piece_title := Label.new()
-	piece_title.text = "兵  力"
-	piece_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	piece_title.add_theme_font_size_override("font_size", 12)
-	piece_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
-	piece_col.add_child(piece_title)
+	_piece_title = Label.new()
+	_piece_title.text = LocaleManager.L("main_menu.forces")
+	_piece_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_piece_title.add_theme_font_size_override("font_size", 12)
+	_piece_title.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	piece_col.add_child(_piece_title)
 	_piece_option = OptionButton.new()
 	_piece_option.custom_minimum_size = Vector2(100, 28)
 	_piece_option.add_theme_font_size_override("font_size", 13)
 	_piece_option.add_theme_color_override("font_color", UITheme.C_GOLD)
 	_piece_option.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
 	for p in PIECE_ENTRIES:
-		_piece_option.add_item("%d 子" % p)
+		_piece_option.add_item(LocaleManager.L("main_menu.forces_value", {"n": p}))
 	_piece_option.select(_selected_piece_idx)
 	piece_col.add_child(_piece_option)
 
@@ -204,7 +260,7 @@ func _build_ui() -> void:
 
 	# 开始按钮
 	_start_btn = Button.new()
-	_start_btn.text = "开 始 对 局"
+	_start_btn.text = LocaleManager.L("main_menu.start")
 	_start_btn.custom_minimum_size = Vector2(280, 48)
 	_start_btn.size_flags_horizontal = SIZE_SHRINK_CENTER
 	_start_btn.add_theme_font_size_override("font_size", 20)
@@ -226,21 +282,30 @@ func _build_ui() -> void:
 	_bottom_row.add_theme_constant_override("separation", 24)
 	root.add_child(_bottom_row)
 
-	var theme_btn := _make_text_button("切换主题", false)
+	var theme_btn := _make_text_button(LocaleManager.L("main_menu.theme_switch"), false)
 	theme_btn.pressed.connect(func(): theme_cycle_requested.emit())
 	_bottom_row.add_child(theme_btn)
+	_bottom_btns.append({"btn": theme_btn, "key": "main_menu.theme_switch"})
 
-	var replay_btn := _make_text_button("棋 谱 回 放", false)
+	var replay_btn := _make_text_button(LocaleManager.L("main_menu.replay"), false)
 	replay_btn.pressed.connect(func(): replay_requested.emit())
 	_bottom_row.add_child(replay_btn)
+	_bottom_btns.append({"btn": replay_btn, "key": "main_menu.replay"})
 
-	var tutorial_btn := _make_text_button("规 则 教 程", false)
+	var tutorial_btn := _make_text_button(LocaleManager.L("main_menu.tutorial"), false)
 	tutorial_btn.pressed.connect(func(): tutorial_requested.emit())
 	_bottom_row.add_child(tutorial_btn)
+	_bottom_btns.append({"btn": tutorial_btn, "key": "main_menu.tutorial"})
 
-	var quit_btn := _make_text_button("退出", true)
+	# 语言切换按钮（显示当前语言名，点击切换）
+	_lang_btn = _make_text_button(LocaleManager.L("main_menu.lang_" + LocaleManager.current_locale), false)
+	_lang_btn.pressed.connect(func(): LocaleManager.toggle_locale())
+	_bottom_row.add_child(_lang_btn)
+
+	var quit_btn := _make_text_button(LocaleManager.L("main_menu.exit"), true)
 	quit_btn.pressed.connect(func(): quit_requested.emit())
 	_bottom_row.add_child(quit_btn)
+	_bottom_btns.append({"btn": quit_btn, "key": "main_menu.exit"})
 
 	# 二级难度选择视图（人机对战：选择 AI 难度）
 	_build_difficulty_view()
@@ -259,11 +324,12 @@ func _build_difficulty_view() -> void:
 	_difficulty_view.add_child(root)
 
 	var title := Label.new()
-	title.text = "选择 AI 难度"
+	title.text = LocaleManager.L("main_menu.difficulty_label")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 26)
 	title.add_theme_color_override("font_color", UITheme.C_GOLD)
 	root.add_child(title)
+	_diff_title = title
 
 	_add_spacer(root, 10)
 
@@ -277,7 +343,7 @@ func _build_difficulty_view() -> void:
 	]
 	for d in diffs:
 		var btn := Button.new()
-		btn.text = "%s  —  %s" % [AIDifficulty.name_of(d), AIDifficulty.desc_of(d)]
+		btn.text = "%s  —  %s" % [LocaleManager.L(AIDifficulty.name_key(d)), LocaleManager.L(AIDifficulty.desc_key(d))]
 		btn.custom_minimum_size = Vector2(320, 42)
 		btn.size_flags_horizontal = SIZE_SHRINK_CENTER
 		btn.add_theme_font_size_override("font_size", 16)
@@ -288,19 +354,20 @@ func _build_difficulty_view() -> void:
 		btn.add_theme_stylebox_override("pressed", _make_btn_style(true))
 		btn.pressed.connect(_on_difficulty_chosen.bind(d))
 		root.add_child(btn)
+		_diff_buttons.append({"btn": btn, "diff": d})
 
 	_add_spacer(root, 16)
 
-	var back_btn := Button.new()
-	back_btn.text = "返 回"
-	back_btn.custom_minimum_size = Vector2(160, 36)
-	back_btn.size_flags_horizontal = SIZE_SHRINK_CENTER
-	back_btn.flat = true
-	back_btn.add_theme_font_size_override("font_size", 14)
-	back_btn.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
-	back_btn.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
-	back_btn.pressed.connect(_hide_difficulty_view)
-	root.add_child(back_btn)
+	_diff_back_btn = Button.new()
+	_diff_back_btn.text = LocaleManager.L("main_menu.back")
+	_diff_back_btn.custom_minimum_size = Vector2(160, 36)
+	_diff_back_btn.size_flags_horizontal = SIZE_SHRINK_CENTER
+	_diff_back_btn.flat = true
+	_diff_back_btn.add_theme_font_size_override("font_size", 14)
+	_diff_back_btn.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
+	_diff_back_btn.add_theme_color_override("font_hover_color", UITheme.C_GOLD_BRIGHT)
+	_diff_back_btn.pressed.connect(_hide_difficulty_view)
+	root.add_child(_diff_back_btn)
 
 func _show_difficulty_view() -> void:
 	if _main_root != null:
@@ -320,7 +387,7 @@ func _on_difficulty_chosen(difficulty: int) -> void:
 	_emit_start(entry, difficulty)
 
 # 构建一行思考时间选项（带组标签）
-func _add_time_row(parent: Container, group_label: String, group_key: String) -> void:
+func _add_time_row(parent: Container, group_key: String) -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 8)
@@ -328,13 +395,14 @@ func _add_time_row(parent: Container, group_label: String, group_key: String) ->
 	parent.add_child(row)
 	# 组标签
 	var lbl := Label.new()
-	lbl.text = group_label
+	lbl.text = LocaleManager.L("main_menu.amateur" if group_key == "amateur" else "main_menu.professional")
 	lbl.add_theme_font_size_override("font_size", 11)
 	lbl.add_theme_color_override("font_color", UITheme.C_GOLD_DIM)
 	lbl.custom_minimum_size = Vector2(40, 28)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(lbl)
+	_time_group_labels.append({"lbl": lbl, "group": group_key})
 	# 该组所有选项
 	for i in TIME_ENTRIES.size():
 		if TIME_ENTRIES[i].get("group", "") != group_key:
@@ -346,7 +414,7 @@ func _add_time_item(parent: Container, idx: int) -> void:
 	var entry: Dictionary = TIME_ENTRIES[idx]
 	var active: bool = (idx == _selected_time_idx)
 	var btn := Button.new()
-	btn.text = entry.label
+	btn.text = LocaleManager.L(entry.label_key)
 	btn.flat = true
 	btn.add_theme_font_size_override("font_size", 13)
 	btn.add_theme_color_override("font_color", UITheme.C_GOLD if active else UITheme.C_TEXT_DIM)
@@ -413,14 +481,14 @@ func _add_mode_item(parent: Container, idx: int) -> void:
 	hbox.add_child(indicator)
 
 	var name_lbl := Label.new()
-	name_lbl.text = entry.name
+	name_lbl.text = LocaleManager.L(entry.name_key)
 	name_lbl.add_theme_font_size_override("font_size", 16)
 	name_lbl.add_theme_color_override("font_color", UITheme.C_GOLD if active else UITheme.C_TEXT)
 	name_lbl.size_flags_horizontal = SIZE_SHRINK_CENTER
 	hbox.add_child(name_lbl)
 
 	var desc_lbl := Label.new()
-	desc_lbl.text = entry.desc
+	desc_lbl.text = LocaleManager.L(entry.desc_key)
 	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	desc_lbl.add_theme_font_size_override("font_size", 12)
 	desc_lbl.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
@@ -503,7 +571,7 @@ func _emit_start(entry: Dictionary, difficulty: int) -> void:
 func _on_komi_step(dir: int) -> void:
 	_komi_value = clamp(_komi_value + dir * KOMI_STEP, KOMI_MIN, KOMI_MAX)
 	if _komi_label != null:
-		_komi_label.text = "%.1f 目" % _komi_value
+		_komi_label.text = LocaleManager.L("main_menu.komi_value", {"n": "%.1f" % _komi_value})
 
 # 创建步进按钮（用于贴目加减）
 func _make_step_btn(label: String) -> Button:

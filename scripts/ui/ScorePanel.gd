@@ -61,6 +61,7 @@ func _ready() -> void:
 	_theme = ThemeManager.current
 	_refresh_theme_colors()
 	ThemeManager.theme_changed.connect(_on_theme_changed)
+	LocaleManager.locale_changed.connect(_on_locale_changed)
 	reload_avatar()
 	_build_deploy_button()
 	_build_log_panel()
@@ -79,7 +80,7 @@ func _ready() -> void:
 func _build_log_panel() -> void:
 	# 标题按钮（点击折叠/展开）
 	_log_title_btn = Button.new()
-	_log_title_btn.text = "▾ 得分日志"
+	_log_title_btn.text = LocaleManager.L("score.log_name")
 	_log_title_btn.pressed.connect(_toggle_log)
 	add_child(_log_title_btn)
 	# 滚动列表
@@ -117,6 +118,10 @@ func _toggle_log() -> void:
 	_log_expanded = not _log_expanded
 	_refresh_log_view()
 
+func _on_locale_changed(_locale: String) -> void:
+	_refresh_log_view()
+	queue_redraw()
+
 # 注入完整日志（GameScreen 调用，自动过滤本方）
 func set_log_entries(all_entries: Array) -> void:
 	_log_entries.clear()
@@ -129,7 +134,7 @@ func set_log_entries(all_entries: Array) -> void:
 func _refresh_log_view() -> void:
 	if _log_title_btn == null:
 		return
-	var title: String = ("▾" if _log_expanded else "▸") + " 得分日志"
+	var title: String = ("▾" if _log_expanded else "▸") + " " + LocaleManager.L("score.log_name")
 	if not _log_entries.is_empty():
 		var last = _log_entries[-1]
 		var ply: int = last.get("ply", 0)
@@ -145,7 +150,7 @@ func _refresh_log_view() -> void:
 			c.queue_free()
 		if _log_entries.is_empty():
 			var empty := Label.new()
-			empty.text = "（暂无记录）"
+			empty.text = LocaleManager.L("score.log_empty")
 			empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			empty.add_theme_font_size_override("font_size", 11)
 			empty.add_theme_color_override("font_color", _c_dim)
@@ -160,7 +165,7 @@ func _make_log_label(e: Dictionary) -> Label:
 	var action: String = _log_action_label(e)
 	var pos_str: String = _log_pos_label(e)
 	var cap: int = e.get("captures", 0)
-	var cap_str: String = ("提%d" % cap) if cap > 0 else "  "
+	var cap_str: String = LocaleManager.L("score.log_cap_format", {"n": cap}) if cap > 0 else "  "
 	var score_str: String = _log_score_label(e)
 	var text: String = "%3d. %-5s %-4s %s  %s" % [ply, action, pos_str, cap_str, score_str]
 	var lbl := Label.new()
@@ -177,12 +182,12 @@ func _make_log_label(e: Dictionary) -> Label:
 
 func _log_action_label(e: Dictionary) -> String:
 	if e.get("passed", false):
-		return "虚手"
+		return LocaleManager.L("score.log_pass")
 	if e.get("deployed", false):
-		return "部署"
+		return LocaleManager.L("score.log_deploy")
 	if e.get("bounced", false):
-		return "弹子"
-	return "落子"
+		return LocaleManager.L("score.log_bounce")
+	return LocaleManager.L("score.log_move")
 
 func _log_pos_label(e: Dictionary) -> String:
 	var placed = e.get("placed", null)
@@ -235,7 +240,7 @@ func _on_theme_changed(t: BaseTheme) -> void:
 # 创建特种部队部署按钮（身份名片下方，居中）
 func _build_deploy_button() -> void:
 	_deploy_btn = Button.new()
-	_deploy_btn.text = "特种部队"
+	_deploy_btn.text = LocaleManager.L("score.log_special")
 	_deploy_btn.custom_minimum_size = Vector2(150, 26)
 	_deploy_btn.size = Vector2(150, 26)
 	_deploy_btn.visible = false  # 默认隐藏，待 set_session 后按 special.enabled 显示
@@ -309,26 +314,26 @@ func _update_deploy_button() -> void:
 	# 非本地可控方（AI/对手）的按钮仅展示状态，始终禁用
 	if not _controllable:
 		if left <= 0:
-			_deploy_btn.text = "特 种 已 用 尽"
+			_deploy_btn.text = LocaleManager.L("score.special_used_out")
 		else:
-			_deploy_btn.text = "特 种 (剩 %d)" % left
+			_deploy_btn.text = LocaleManager.L("score.special_remaining", {"n": left})
 		_deploy_btn.disabled = true
 	elif _deploy_mode and is_my_turn:
-		_deploy_btn.text = "✕ 取 消 部 署"
+		_deploy_btn.text = LocaleManager.L("score.cancel_deploy")
 		_deploy_btn.disabled = false
 	elif is_my_turn and can_deploy:
-		_deploy_btn.text = "▸ 部 署 特 种 (剩 %d)" % left
+		_deploy_btn.text = LocaleManager.L("score.deploy_btn", {"n": left})
 		_deploy_btn.disabled = false
 	elif is_my_turn:
 		# 行棋方但不可部署
 		if left <= 0:
-			_deploy_btn.text = "特 种 已 用 尽"
+			_deploy_btn.text = LocaleManager.L("score.special_used_out")
 		else:
-			_deploy_btn.text = "特 种 冷 却 中"
+			_deploy_btn.text = LocaleManager.L("score.special_cooldown")
 		_deploy_btn.disabled = true
 	else:
 		# 非行棋方：仅显示状态，禁用
-		_deploy_btn.text = "特 种 (剩 %d)" % left
+		_deploy_btn.text = LocaleManager.L("score.special_remaining", {"n": left})
 		_deploy_btn.disabled = true
 
 # 从当前主题派生文字/高亮色
@@ -553,7 +558,7 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 	var content_h: float = 555.0  # 含曲线图区域 + 特种按钮行（原 540 + 15）
 	var oy: float = max(0.0, (h - content_h) * 0.5)  # 垂直居中偏移
 
-	var name_str: String = _role_name if _role_name != "" else ("黑 方" if side == Const.BLACK else "白 方")
+	var name_str: String = _role_name if _role_name != "" else (LocaleManager.L("score.black_side") if side == Const.BLACK else LocaleManager.L("score.white_side"))
 	# 领先/落后配色
 	var is_leading: bool = bk.total() > _opp_total
 	var lead_color: Color = _c_text
@@ -585,7 +590,7 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 	var name_fs: int = _theme.score_font_size + 6
 	font.draw_string(get_canvas_item(), Vector2(text_x, y + oy + 44), name_str, HORIZONTAL_ALIGNMENT_LEFT, -1, name_fs, lead_color)
 	var pieces_left: int = session.pieces_left(side)
-	var pieces_str: String = "兵力 %d / %d" % [pieces_left, session.piece_limit]
+	var pieces_str: String = LocaleManager.L("score.forces_format", {"used": pieces_left, "total": session.piece_limit})
 	font.draw_string(get_canvas_item(), Vector2(text_x, y + oy + 68), pieces_str, HORIZONTAL_ALIGNMENT_LEFT, -1, _theme.coord_font_size + 2, _c_dim)
 	# 注：特种部队按钮为子节点 Button，由 _update_deploy_button() 定位在 y+oy+82 处
 
@@ -595,7 +600,7 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 
 	# ===== 模块2：总分焦点（y+oy+112 ~ y+oy+238）=====
 	# "总 分" 标签
-	font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 144), "总  分", HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, _c_dim)
+	font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 144), LocaleManager.L("score.total_score"), HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, _c_dim)
 	# 总分大字（闪烁+放大+数字滚动）
 	var total_str: String = str(int(round(_display_total)))
 	var total_size: int = int((_theme.score_total_font_size + 10) * _flash_scale)
@@ -610,7 +615,7 @@ func _draw_content(x: float, y: float, w: float, h: float, bk) -> void:
 		var pulse: float = 0.5 + 0.5 * sin(_time * 4.0)
 		var think_color: Color = _c_highlight
 		think_color.a = 0.5 + 0.45 * pulse
-		font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 220), "思 考 中 …", HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, think_color)
+		font.draw_string(get_canvas_item(), Vector2(cx, y + oy + 220), LocaleManager.L("score.thinking"), HORIZONTAL_ALIGNMENT_CENTER, -1, _theme.coord_font_size + 3, think_color)
 
 	# 分隔线2
 	var sep2_y: float = y + oy + 238
@@ -634,7 +639,7 @@ func _draw_score_bars(x: float, y: float, w: float, h: float, bk) -> void:
 	var font: Font = get_theme_default_font()
 	var label_fs: int = max(10, _theme.coord_font_size - 1)
 	# 标题
-	font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y + label_fs), "得 分 构 成", HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs + 1, _c_dim)
+	font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y + label_fs), LocaleManager.L("score.score_breakdown"), HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs + 1, _c_dim)
 	# 合并分数
 	var occ: int = bk.occupation()      # 活子 + 围空
 	var def: int = bk.defense()         # 歼灭 + 围困
@@ -646,9 +651,9 @@ func _draw_score_bars(x: float, y: float, w: float, h: float, bk) -> void:
 	var c_cas := Color(0.72, 0.28, 0.22, 0.92)  # 战损 - 暗红
 	# 三条分数条参数
 	var items: Array = [
-		{"name": "占领分", "value": occ, "color": c_occ, "sign": 1, "max_key": "occ"},
-		{"name": "防御分", "value": def, "color": c_def, "sign": 1, "max_key": "def"},
-		{"name": "战损分", "value": cas, "color": c_cas, "sign": -1, "max_key": "cas"},  # 战损为扣分
+		{"name": LocaleManager.L("score.occupation"), "value": occ, "color": c_occ, "sign": 1, "max_key": "occ"},
+		{"name": LocaleManager.L("score.defense"), "value": def, "color": c_def, "sign": 1, "max_key": "def"},
+		{"name": LocaleManager.L("score.loss"), "value": cas, "color": c_cas, "sign": -1, "max_key": "cas"},  # 战损为扣分
 	]
 	# 条形区域布局
 	var bar_area_y: float = y + label_fs + 14
@@ -698,7 +703,7 @@ func _draw_score_chart(x: float, y: float, w: float, h: float) -> void:
 	var font: Font = get_theme_default_font()
 	var label_fs: int = max(10, _theme.coord_font_size - 1)
 	# 标题
-	font.draw_string(get_canvas_item(), Vector2(x, y + label_fs), "总分变化", HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, _c_dim)
+	font.draw_string(get_canvas_item(), Vector2(x, y + label_fs), LocaleManager.L("score.score_change"), HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, _c_dim)
 	# 图表区域（留出标题和底部图例空间）
 	var chart_x: float = x
 	var chart_y: float = y + label_fs + 4
@@ -715,7 +720,7 @@ func _draw_score_chart(x: float, y: float, w: float, h: float) -> void:
 	draw_rect(Rect2(chart_x, chart_y, chart_w, chart_h), border_c, false, 1.0)
 	# 无历史数据时显示提示
 	if _score_history.size() < 2:
-		font.draw_string(get_canvas_item(), Vector2(chart_x + chart_w * 0.5, chart_y + chart_h * 0.5 + label_fs * 0.5), "等待对局...", HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, _c_dim)
+		font.draw_string(get_canvas_item(), Vector2(chart_x + chart_w * 0.5, chart_y + chart_h * 0.5 + label_fs * 0.5), LocaleManager.L("score.waiting_game"), HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, _c_dim)
 		return
 	# 计算Y轴范围
 	var max_score: int = 1
@@ -763,11 +768,11 @@ func _draw_score_chart(x: float, y: float, w: float, h: float) -> void:
 	var legend_x: float = chart_x
 	# 本方图例
 	draw_line(Vector2(legend_x, legend_y), Vector2(legend_x + 12, legend_y), my_color, 2.0)
-	font.draw_string(get_canvas_item(), Vector2(legend_x + 16, legend_y + label_fs * 0.4), "本方", HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, _c_text)
+	font.draw_string(get_canvas_item(), Vector2(legend_x + 16, legend_y + label_fs * 0.4), LocaleManager.L("score.own_side"), HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, _c_text)
 	# 对方图例
 	var opp_legend_x: float = legend_x + 50
 	draw_line(Vector2(opp_legend_x, legend_y), Vector2(opp_legend_x + 12, legend_y), opp_color, 1.5)
-	font.draw_string(get_canvas_item(), Vector2(opp_legend_x + 16, legend_y + label_fs * 0.4), "对方", HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, _c_dim)
+	font.draw_string(get_canvas_item(), Vector2(opp_legend_x + 16, legend_y + label_fs * 0.4), LocaleManager.L("score.opp_side"), HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, _c_dim)
 
 # 分区分隔线（带主题色调，比旧版更精致：中部稍亮，两端渐暗）
 func _draw_section_sep(x: float, y: float, w: float) -> void:
@@ -818,7 +823,7 @@ func _draw_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) ->
 	if progress < 0:
 		var inf_c := _c_dim
 		inf_c.a = 0.6 if is_active else 0.4
-		font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y - 2), "∞   无 限", HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, inf_c)
+		font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y - 2), LocaleManager.L("score.time_unlimited"), HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, inf_c)
 		return
 	var tinfo: Dictionary = timer.get_time(side)
 	var in_byoyomi: bool = bool(tinfo.in_byoyomi)
@@ -908,7 +913,7 @@ func _draw_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) ->
 	var time_str: String
 	if in_byoyomi:
 		var bt: float = float(tinfo.byoyomi_time)
-		time_str = "读秒 %ds" % int(ceil(max(0.0, bt)))
+		time_str = LocaleManager.L("score.time_byoyomi", {"n": int(ceil(max(0.0, bt)))})
 	else:
 		var mt: float = float(tinfo.main)
 		var mm: int = int(mt) / 60

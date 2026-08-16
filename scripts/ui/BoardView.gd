@@ -1001,7 +1001,7 @@ func _draw_deploy_indicator(total_size: int) -> void:
 	# 文字（垂直水平居中于横条）
 	var font: Font = get_theme_default_font()
 	var fs: int = max(10, _theme.coord_font_size - 2)
-	var label: String = "部 署 模 式"
+	var label: String = LocaleManager.L("board.deploy_mode")
 	var lbl_size: Vector2 = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 	var lbl_color := Color(base.r, base.g, base.b, 0.95)
 	var lbl_x: float = bar_x + (bar_w - lbl_size.x) * 0.5

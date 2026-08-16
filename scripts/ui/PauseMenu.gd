@@ -34,7 +34,7 @@ func _ready() -> void:
 func set_online_active(active: bool) -> void:
 	_online_active = active
 	if _online_btn != null:
-		_online_btn.text = "退出联机" if active else "联机对战 …"
+		_online_btn.text = LocaleManager.L("pause.exit_online") if active else LocaleManager.L("pause.online")
 
 func _build_ui() -> void:
 	# 1. 半透明遮罩层（淡入）
@@ -74,30 +74,30 @@ func _build_ui() -> void:
 
 	# 标题
 	var title := Label.new()
-	title.text = "—— 设  置 ——"
+	title.text = LocaleManager.L("pause.title_settings")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", UITheme.C_GOLD)
 	vbox.add_child(title)
 
 	# 继续游戏按钮（默认高亮）
-	var resume_btn := _make_button("继 续 游 戏", 320, 40)
+	var resume_btn := _make_button(LocaleManager.L("pause.resume"), 320, 40)
 	resume_btn.pressed.connect(func(): resume_requested.emit())
 	resume_btn.call_deferred("grab_focus")
 	vbox.add_child(resume_btn)
 
 	# 新对局
-	var new_btn := _make_button("新  对  局", 320, 40)
+	var new_btn := _make_button(LocaleManager.L("pause.new_game"), 320, 40)
 	new_btn.pressed.connect(func(): new_game_requested.emit())
 	vbox.add_child(new_btn)
 
 	# 认输（危险按钮）
-	var resign_btn := _make_button("认      输", 320, 40, true)
+	var resign_btn := _make_button(LocaleManager.L("pause.resign"), 320, 40, true)
 	resign_btn.pressed.connect(func(): resign_requested.emit())
 	vbox.add_child(resign_btn)
 
 	# 部署特种
-	var deploy_btn := _make_button("部 署 特 种 (S)", 320, 40)
+	var deploy_btn := _make_button(LocaleManager.L("pause.deploy_special"), 320, 40)
 	deploy_btn.pressed.connect(func(): deploy_special_requested.emit())
 	vbox.add_child(deploy_btn)
 
@@ -106,7 +106,7 @@ func _build_ui() -> void:
 
 	# 模式选择标签
 	var mode_label := Label.new()
-	mode_label.text = "—— 对战模式 ——"
+	mode_label.text = LocaleManager.L("pause.title_mode")
 	mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mode_label.add_theme_font_size_override("font_size", 14)
 	mode_label.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
@@ -122,16 +122,16 @@ func _build_ui() -> void:
 	mode_row2.add_theme_constant_override("separation", 6)
 	vbox.add_child(mode_row2)
 
-	_add_mode_button(mode_row1, "本 地 双 人", "pvp", 0)
-	_add_mode_button(mode_row1, "简  单", "pve", AIManager.Difficulty.EASY)
-	_add_mode_button(mode_row1, "中  等", "pve", AIManager.Difficulty.NORMAL)
-	_add_mode_button(mode_row2, "困  难", "pve", AIManager.Difficulty.HARD)
+	_add_mode_button(mode_row1, LocaleManager.L("pause.local_2p"), "pvp", 0)
+	_add_mode_button(mode_row1, LocaleManager.L("pause.mode_easy"), "pve", AIManager.Difficulty.EASY)
+	_add_mode_button(mode_row1, LocaleManager.L("pause.mode_med"), "pve", AIManager.Difficulty.NORMAL)
+	_add_mode_button(mode_row2, LocaleManager.L("pause.mode_hard"), "pve", AIManager.Difficulty.HARD)
 
 	# 分隔线
 	_add_separator(vbox)
 
 	# 联机按钮
-	_online_btn = _make_button("联 机 对 战 …", 320, 36)
+	_online_btn = _make_button(LocaleManager.L("pause.online"), 320, 36)
 	_online_btn.pressed.connect(func():
 		if _online_active:
 			online_quit_pressed.emit()
@@ -141,23 +141,23 @@ func _build_ui() -> void:
 	vbox.add_child(_online_btn)
 
 	# 切换主题
-	var theme_btn := _make_button("切 换 主 题 (T)", 320, 36)
+	var theme_btn := _make_button(LocaleManager.L("pause.theme_switch"), 320, 36)
 	theme_btn.pressed.connect(func(): theme_cycle_requested.emit())
 	vbox.add_child(theme_btn)
 
 	# 返回主菜单
-	var back_btn := _make_button("返 回 主 菜 单", 320, 40)
+	var back_btn := _make_button(LocaleManager.L("pause.back_to_main"), 320, 40)
 	back_btn.pressed.connect(func(): back_to_main_menu_requested.emit())
 	vbox.add_child(back_btn)
 
 	# 退出游戏（危险按钮）
-	var quit_btn := _make_button("退 出 游 戏", 320, 40, true)
+	var quit_btn := _make_button(LocaleManager.L("pause.exit_game"), 320, 40, true)
 	quit_btn.pressed.connect(func(): quit_requested.emit())
 	vbox.add_child(quit_btn)
 
 	# 提示
 	var hint := Label.new()
-	hint.text = "按 ESC 继续"
+	hint.text = LocaleManager.L("pause.press_esc")
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 12)
 	hint.add_theme_color_override("font_color", UITheme.C_TEXT_FAINT)

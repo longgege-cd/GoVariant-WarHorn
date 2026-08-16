@@ -34,6 +34,7 @@ var _mode_hard_btn: Button
 var _mode_buttons: Array = []
 var _current_mode: String = "pvp"
 var _special_enabled: bool = false
+var _deploy_mode: bool = false
 # 联机按钮
 var _online_btn: Button
 var _online_quit_btn: Button
@@ -42,7 +43,9 @@ var _all_buttons: Array = []  # 所有按钮（供主题切换时刷新）
 func _ready() -> void:
 	_build_ui()
 	_apply_theme()
+	_refresh_button_texts()
 	ThemeManager.theme_changed.connect(_on_theme_changed)
+	LocaleManager.locale_changed.connect(_refresh_button_texts)
 
 func _on_theme_changed(_t: BaseTheme) -> void:
 	_apply_theme()
@@ -52,59 +55,59 @@ func _build_ui() -> void:
 	alignment = BoxContainer.ALIGNMENT_CENTER
 
 	# 显示的 3 个按钮：悔棋 | 虚手 | 设置(菜单)
-	_undo_btn = _make_button("悔 棋 (U)", 100, 36)
+	_undo_btn = _make_button(LocaleManager.L("control.undo"), 100, 36)
 	_undo_btn.pressed.connect(func(): undo_pressed.emit())
 	add_child(_undo_btn)
 
-	_pass_btn = _make_button("虚 手 (P)", 100, 36)
+	_pass_btn = _make_button(LocaleManager.L("control.pass"), 100, 36)
 	_pass_btn.pressed.connect(func(): pass_pressed.emit())
 	add_child(_pass_btn)
 
-	_resign_btn = _make_button("认 输 (R)", 100, 36)
+	_resign_btn = _make_button(LocaleManager.L("control.resign"), 100, 36)
 	_resign_btn.pressed.connect(func(): resign_pressed.emit())
 	add_child(_resign_btn)
 
-	_menu_btn = _make_button("≡ 设 置 (ESC)", 120, 36)
+	_menu_btn = _make_button(LocaleManager.L("control.menu"), 120, 36)
 	_menu_btn.pressed.connect(func(): menu_pressed.emit())
 	add_child(_menu_btn)
 
 	# 隐藏按钮（保留变量供 update_state 引用，避免空引用崩溃）
-	_new_game_btn = _make_button("新局", 60, 30)
+	_new_game_btn = _make_button(LocaleManager.L("control.new_game"), 60, 30)
 	_new_game_btn.visible = false
 	_new_game_btn.pressed.connect(func(): new_game_pressed.emit())
 	add_child(_new_game_btn)
 
-	_deploy_btn = _make_button("部署(S)", 70, 30)
+	_deploy_btn = _make_button(LocaleManager.L("control.deploy"), 70, 30)
 	_deploy_btn.visible = false
 	_deploy_btn.pressed.connect(func(): deploy_special_pressed.emit())
 	add_child(_deploy_btn)
 
-	_theme_btn = _make_button("主题(T)", 70, 30)
+	_theme_btn = _make_button(LocaleManager.L("control.theme"), 70, 30)
 	_theme_btn.visible = false
 	_theme_btn.pressed.connect(func(): cycle_theme_pressed.emit())
 	add_child(_theme_btn)
 
 	# 隐藏的模式按钮
-	_mode_pvp_btn = _make_button("双人", 60, 30)
+	_mode_pvp_btn = _make_button(LocaleManager.L("control.local_2p"), 60, 30)
 	_mode_pvp_btn.toggle_mode = true
 	_mode_pvp_btn.button_pressed = true
 	_mode_pvp_btn.visible = false
 	_mode_pvp_btn.pressed.connect(func(): _on_mode_selected("pvp", 0))
 	add_child(_mode_pvp_btn)
 
-	_mode_easy_btn = _make_button("简单", 60, 30)
+	_mode_easy_btn = _make_button(LocaleManager.L("ai.easy"), 60, 30)
 	_mode_easy_btn.toggle_mode = true
 	_mode_easy_btn.visible = false
 	_mode_easy_btn.pressed.connect(func(): _on_mode_selected("pve", AIManager.Difficulty.EASY))
 	add_child(_mode_easy_btn)
 
-	_mode_med_btn = _make_button("中等", 60, 30)
+	_mode_med_btn = _make_button(LocaleManager.L("control.mode_med"), 60, 30)
 	_mode_med_btn.toggle_mode = true
 	_mode_med_btn.visible = false
 	_mode_med_btn.pressed.connect(func(): _on_mode_selected("pve", AIManager.Difficulty.NORMAL))
 	add_child(_mode_med_btn)
 
-	_mode_hard_btn = _make_button("困难", 60, 30)
+	_mode_hard_btn = _make_button(LocaleManager.L("ai.hard"), 60, 30)
 	_mode_hard_btn.toggle_mode = true
 	_mode_hard_btn.visible = false
 	_mode_hard_btn.pressed.connect(func(): _on_mode_selected("pve", AIManager.Difficulty.HARD))
@@ -112,12 +115,12 @@ func _build_ui() -> void:
 	_mode_buttons = [_mode_pvp_btn, _mode_easy_btn, _mode_med_btn, _mode_hard_btn]
 
 	# 隐藏的联机按钮
-	_online_btn = _make_button("联机…", 70, 30)
+	_online_btn = _make_button(LocaleManager.L("control.online"), 70, 30)
 	_online_btn.visible = false
 	_online_btn.pressed.connect(func(): online_pressed.emit())
 	add_child(_online_btn)
 
-	_online_quit_btn = _make_button("退出联机", 80, 30)
+	_online_quit_btn = _make_button(LocaleManager.L("control.exit_online"), 80, 30)
 	_online_quit_btn.visible = false
 	_online_quit_btn.disabled = true
 	_online_quit_btn.pressed.connect(func(): online_quit_pressed.emit())
@@ -130,6 +133,35 @@ func _make_button(label: String, w: int, h: int) -> Button:
 	b.size_flags_horizontal = SIZE_SHRINK_CENTER
 	_all_buttons.append(b)
 	return b
+
+# 刷新所有按钮文字（语言切换时调用）
+func _refresh_button_texts() -> void:
+	if _undo_btn != null:
+		_undo_btn.text = LocaleManager.L("control.undo")
+	if _pass_btn != null:
+		_pass_btn.text = LocaleManager.L("control.pass")
+	if _resign_btn != null:
+		_resign_btn.text = LocaleManager.L("control.resign")
+	if _menu_btn != null:
+		_menu_btn.text = LocaleManager.L("control.menu")
+	if _new_game_btn != null:
+		_new_game_btn.text = LocaleManager.L("control.new_game")
+	if _deploy_btn != null:
+		_deploy_btn.text = LocaleManager.L("control.cancel_deploy") if _deploy_mode else LocaleManager.L("control.deploy")
+	if _theme_btn != null:
+		_theme_btn.text = LocaleManager.L("control.theme")
+	if _mode_pvp_btn != null:
+		_mode_pvp_btn.text = LocaleManager.L("control.local_2p")
+	if _mode_easy_btn != null:
+		_mode_easy_btn.text = LocaleManager.L("ai.easy")
+	if _mode_med_btn != null:
+		_mode_med_btn.text = LocaleManager.L("control.mode_med")
+	if _mode_hard_btn != null:
+		_mode_hard_btn.text = LocaleManager.L("ai.hard")
+	if _online_btn != null:
+		_online_btn.text = LocaleManager.L("control.online")
+	if _online_quit_btn != null:
+		_online_quit_btn.text = LocaleManager.L("control.exit_online")
 
 # 应用当前主题到所有按钮（字色 + 像素风 stylebox）
 func _apply_theme() -> void:
@@ -195,10 +227,11 @@ func update_state(session: GameSession, deploy_mode: bool, deploy_phase: bool = 
 	_resign_btn.disabled = game_over
 	_deploy_btn.disabled = game_over or not session.special.enabled
 	_undo_btn.disabled = game_over or not session.can_undo()
+	_deploy_mode = deploy_mode
 	if deploy_mode:
-		_deploy_btn.text = "取消部署"
+		_deploy_btn.text = LocaleManager.L("control.cancel_deploy")
 	else:
-		_deploy_btn.text = "部署(S)"
+		_deploy_btn.text = LocaleManager.L("control.deploy")
 	# 特种部队冷却/次数
 	if not game_over and session.special.enabled:
 		var can_deploy: bool = session.special.can_deploy(session.to_move, session.ply)

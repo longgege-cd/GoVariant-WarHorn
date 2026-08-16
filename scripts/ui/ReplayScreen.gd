@@ -148,7 +148,7 @@ func _on_import_sgf() -> void:
 	var dlg := FileDialog.new()
 	dlg.access = FileDialog.ACCESS_FILESYSTEM
 	dlg.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	dlg.filters = PackedStringArray(["*.sgf ; SGF 棋谱"])
+	dlg.filters = PackedStringArray([LocaleManager.L("replay.sgf_filter")])
 	dlg.use_native_dialog = true
 	add_child(dlg)
 	dlg.file_selected.connect(func(path: String):

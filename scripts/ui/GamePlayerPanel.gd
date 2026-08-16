@@ -35,9 +35,9 @@ var _current_paths: Array = []
 
 # 棋谱库分类
 const CATEGORIES := [
-	{"key": "classic", "name": "经典对局", "dir": "res://sgf/classic/"},
-	{"key": "masters", "name": "棋圣名局", "dir": "res://sgf/masters/"},
-	{"key": "modern", "name": "当代对局", "dir": "res://sgf/modern/"},
+	{"key": "classic", "name_key": "replay.classic", "dir": "res://sgf/classic/"},
+	{"key": "masters", "name_key": "replay.masters", "dir": "res://sgf/masters/"},
+	{"key": "modern", "name_key": "replay.modern", "dir": "res://sgf/modern/"},
 ]
 
 # 统一日志输出（仅 print，不写文件，避免卡顿；文件日志由 ReplayScreen 统一管理）
@@ -91,7 +91,7 @@ func _build_ui() -> void:
 	_category_option.add_theme_font_size_override("font_size", 12)
 	_category_option.add_theme_color_override("font_color", UITheme.C_GOLD)
 	for cat in CATEGORIES:
-		_category_option.add_item(cat.name)
+		_category_option.add_item(LocaleManager.L(cat.name_key))
 	_category_option.item_selected.connect(_on_category_selected)
 	vbox.add_child(_category_option)
 
@@ -110,7 +110,7 @@ func _build_ui() -> void:
 	vbox.add_child(imp_row)
 
 	var import_btn := Button.new()
-	import_btn.text = "导入"
+	import_btn.text = LocaleManager.L("replay.import")
 	import_btn.custom_minimum_size = Vector2(50, 22)
 	import_btn.add_theme_font_size_override("font_size", 12)
 	import_btn.add_theme_color_override("font_color", UITheme.C_GOLD)
@@ -128,7 +128,7 @@ func _build_ui() -> void:
 
 	# 信息标签（棋谱信息：黑方 vs 白方 | 结果 | 日期）
 	_info_label = Label.new()
-	_info_label.text = "未导入棋谱"
+	_info_label.text = LocaleManager.L("replay.not_imported")
 	_info_label.add_theme_font_size_override("font_size", 10)
 	_info_label.add_theme_color_override("font_color", UITheme.C_TEXT_DIM)
 	_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -246,14 +246,14 @@ func _refresh_game_options(cat_idx: int) -> void:
 	_game_option.clear()
 	_current_paths.clear()
 	if files.is_empty():
-		_game_option.add_item("（无棋谱）")
+		_game_option.add_item(LocaleManager.L("replay.no_game"))
 		_game_option.disabled = true
 		return
 	_game_option.disabled = false
 	for f in files:
 		_game_option.add_item(f.display)
 		_current_paths.append(f.path)
-	_log("分类 '%s' 刷新棋谱下拉: %d 个棋谱" % [CATEGORIES[cat_idx].name, files.size()])
+	_log("分类 '%s' 刷新棋谱下拉: %d 个棋谱" % [LocaleManager.L(CATEGORIES[cat_idx].name_key), files.size()])
 
 func _on_category_selected(idx: int) -> void:
 	_refresh_game_options(idx)
@@ -285,9 +285,9 @@ func set_game_info(info: Dictionary) -> void:
 	elif pw != "":
 		_info_text = pw
 	if info.get("result", "") != "":
-		_info_text += "\n结果: %s" % info.result
+		_info_text += LocaleManager.L("replay.result_format", {"n": info.result})
 	if _info_text == "":
-		_info_text = "未命名对局"
+		_info_text = LocaleManager.L("replay.unnamed")
 	_info_label.text = _info_text
 	_total_moves = info.get("total_moves", 0)
 	_current_ply = 0

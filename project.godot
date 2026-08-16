@@ -10,6 +10,7 @@ config/features=PackedStringArray("4.7")
 
 [autoload]
 Log="*res://scripts/core/Log.gd"
+LocaleManager="*res://scripts/core/LocaleManager.gd"
 ThemeManager="*res://scripts/theme/ThemeManager.gd"
 EffectsPlayer="*res://scripts/effects/EffectsPlayer.gd"
 AudioManager="*res://scripts/effects/AudioManager.gd"

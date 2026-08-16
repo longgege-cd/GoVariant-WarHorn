@@ -71,7 +71,10 @@ const DEPLOY_PREF_WHITE: Array = [
 ]
 var _deploy_phase: bool = false  # 当前是否处于布局阶段
 var _deploy_stones: Dictionary = {}  # color -> 已布子数
-var _deploy_time_left: float = DEPLOY_TIME_LIMIT  # 布局剩余时间
+# 布局阶段双方各自计时（每方独立 2 分钟），轮到谁就扣谁的时间；耗尽则系统自动随机布子
+var _deploy_time_left: Dictionary = {Const.BLACK: DEPLOY_TIME_LIMIT, Const.WHITE: DEPLOY_TIME_LIMIT}
+# 超时自动布子触发标记（color -> true 表示该方时间已耗尽，自动布子流程已启动；避免每帧重复触发）
+var _deploy_timeout_triggered: Dictionary = {Const.BLACK: false, Const.WHITE: false}
 
 func _ready() -> void:
 	_ensure_avatar_dir()
@@ -107,15 +110,21 @@ func _process(_delta: float) -> void:
 	# 纯黑背景无需每帧重绘，但需推进计时器
 	if _timer != null and session != null and not session.game_over:
 		_timer.tick(_delta)
-	# 布局阶段：推进 2 分钟倒计时，超时自动正式开局；倒计时同步到双方得分板
+	# 布局阶段：双方各自计时，仅扣当前行棋方时间；耗尽则系统自动随机布子（每帧检测，布满即停）
 	if _deploy_phase and session != null and not session.game_over:
-		_deploy_time_left -= _delta
-		if _deploy_time_left <= 0.0:
-			_deploy_time_left = 0.0
-			_push_deploy_to_panels()
-			call_deferred("_begin_playing")
-		else:
-			_push_deploy_to_panels()
+		var mover: int = session.to_move
+		var prev: float = float(_deploy_time_left.get(mover, DEPLOY_TIME_LIMIT))
+		var now_t: float = max(0.0, prev - _delta)
+		_deploy_time_left[mover] = now_t
+		_push_deploy_to_panels()
+		# 时间耗尽 → 系统自动随机布子（每次只布 1 子，遵循轮次交替）
+		# 联机客户端不主动执行（主机权威扣时间 + 主机权威自动布子 + confirm 同步）
+		if now_t <= 0.0 and int(_deploy_stones.get(mover, 0)) < DEPLOY_STONES_PER_SIDE:
+			if not (_online_mode and not NetworkManager.is_host()):
+				_auto_deploy_random(mover)
+			elif not bool(_deploy_timeout_triggered.get(mover, false)):
+				_deploy_timeout_triggered[mover] = true
+				Log.i("布局阶段 %s 时间耗尽，等待主机自动布子" % ("黑方" if mover == Const.BLACK else "白方"))
 
 func _exit_tree() -> void:
 	# 节点销毁时回收 AI 线程，避免线程泄漏
@@ -168,11 +177,14 @@ func _layout() -> void:
 	center.add_child(board_view)
 
 	# 状态提示条（联机/PvE 时显示）
+	# 固定占位高度（永远 22px），避免显示/隐藏时引起 VBoxContainer 重新布局导致棋盘位移
 	_status_label = Label.new()
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_status_label.add_theme_font_size_override("font_size", 13)
 	_status_label.add_theme_color_override("font_color", preload("res://scripts/ui/UITheme.gd").C_GOLD)
-	_status_label.visible = false
+	_status_label.custom_minimum_size = Vector2(0, 22)
+	_status_label.text = ""
 	center.add_child(_status_label)
 
 	# 底部控制面板（精简：悔棋/虚手/设置）
@@ -409,7 +421,7 @@ func _on_mode_selected(mode: String, difficulty: int) -> void:
 
 func _new_game() -> void:
 	session = GameSession.new(_komi, _special_enabled, _piece_limit)
-	board_view.set_session(session)
+	board_view.set_session(session, deployment_enabled)
 	black_score_panel.set_session(session)
 	white_score_panel.set_session(session)
 	# 隐子视角：PvE 玩家执黑只看己方隐子；联机仅看本地颜色方隐子；PvP 全可见（观战视角）
@@ -464,10 +476,11 @@ func _new_game() -> void:
 		black_score_panel.reload_avatar()
 	if white_score_panel != null and white_score_panel.has_method("reload_avatar"):
 		white_score_panel.reload_avatar()
-	# 布局阶段初始化：重置布子计数与 2 分钟倒计时
+	# 布局阶段初始化：重置布子计数与双方独立的 2 分钟倒计时
 	_deploy_phase = deployment_enabled
 	_deploy_stones = {Const.BLACK: 0, Const.WHITE: 0}
-	_deploy_time_left = DEPLOY_TIME_LIMIT
+	_deploy_time_left = {Const.BLACK: DEPLOY_TIME_LIMIT, Const.WHITE: DEPLOY_TIME_LIMIT}
+	_deploy_timeout_triggered = {Const.BLACK: false, Const.WHITE: false}
 	if board_view != null:
 		board_view.set_deploy_phase(_deploy_phase)
 	# 布局阶段暂停思考时间计时（布局使用独立的 2 分钟倒计时）
@@ -1134,6 +1147,46 @@ func _ai_deploy_choose(color: int) -> Vector2i:
 		return empties[randi() % empties.size()]
 	return Vector2i(9, 9)  # 极端兜底（己方领土已满，理论不可达）
 
+# 布局阶段超时自动随机布子：在己方领土内随机选空点落子（每次只布 1 子，遵循轮次交替）
+# 调用方已守卫：color 仍在 _deploy_phase 且 _deploy_stones[color] < DEPLOY_STONES_PER_SIDE
+# 多次轮到该方时（已布 1 子后轮到对方再轮回）若时间仍耗尽则再次自动布子
+func _auto_deploy_random(color: int) -> void:
+	if session == null or session.game_over or not _deploy_phase:
+		return
+	if int(_deploy_stones.get(color, 0)) >= DEPLOY_STONES_PER_SIDE:
+		return  # 已布满
+	if _no_empty_in_own_zone(color):
+		# 己方领土已无空点，标记该方完成布局（极端兜底）
+		_deploy_stones[color] = DEPLOY_STONES_PER_SIDE
+		_push_deploy_to_panels()
+		return
+	var pos: Vector2i = _ai_deploy_choose(color)  # 复用偏好点+随机兜底逻辑
+	var out: Dictionary = session.play_move(color, pos.y, pos.x)
+	if not out.ok:
+		Log.w("布局阶段自动布子非法: %s" % out.get("reason", ""))
+		if _no_empty_in_own_zone(color):
+			_deploy_stones[color] = DEPLOY_STONES_PER_SIDE
+			_push_deploy_to_panels()
+		return
+	Log.i("布局阶段 %s 时间耗尽，系统自动随机布子 (%d,%d)" %
+		["黑方" if color == Const.BLACK else "白方", pos.y, pos.x])
+	# 联机主机：广播给客户端（客户端走 confirm_move 应用到本地 session）
+	if _online_mode and NetworkManager.is_host() and NetworkManager.is_online():
+		NetSync.confirm_move.rpc_id(NetworkManager.remote_peer_id(), pos.y, pos.x, color)
+	# _on_move_committed 会更新 _deploy_stones，双方均布满时 call_deferred("_begin_playing")
+
+# 检查某方领土是否还有空点（用于极端兜底判定）
+func _no_empty_in_own_zone(color: int) -> bool:
+	if session == null:
+		return true
+	for r in Const.BOARD_SIZE:
+		if Const.zone_of_row(r) != Const.own_zone(color):
+			continue
+		for c in Const.BOARD_SIZE:
+			if session.board.get_at(r, c) == Const.EMPTY:
+				return false
+	return true
+
 # 统一设置 AI 思考状态（同步更新得分板提示）
 func _set_ai_thinking(t: bool) -> void:
 	var panel: Panel = white_score_panel if _ai_color == Const.WHITE else black_score_panel
@@ -1233,6 +1286,8 @@ func _effect_duration(effect_id: String) -> float:
 	match effect_id:
 		"capture":
 			return 0.9
+		"capture_wave":
+			return 1.0
 		"bounce":
 			return 0.7
 		"move":
@@ -1266,35 +1321,30 @@ func _update_status() -> void:
 	pass
 
 func _show_status(msg: String) -> void:
-	# 联机/PvE 状态提示条（正常对局隐藏，联机流程/报错时显示）
+	# 状态提示条：切换 text 内容而非 visible，固定占位避免棋盘位移
 	if _status_label == null:
 		return
-	if msg.is_empty():
-		_status_label.visible = false
-		return
 	_status_label.text = msg
-	_status_label.visible = true
 	# 重置为金色（覆盖此前 _show_error 的红色）
 	_status_label.add_theme_color_override("font_color", preload("res://scripts/ui/UITheme.gd").C_GOLD)
-	# 10 秒后自动隐藏
+	# 10 秒后自动清空文字（保留占位高度，避免棋盘位移）
 	var lbl := _status_label
 	await get_tree().create_timer(10.0).timeout
 	if is_instance_valid(lbl) and lbl.text == msg:
-		lbl.visible = false
+		lbl.text = ""
 
 func _show_error(msg: String) -> void:
 	# 棋盘边框红色闪烁反馈
 	if board_view != null:
 		board_view.flash_error()
-	# 状态条红色文字提示（4 秒后自动隐藏，避免残留一直显示）
+	# 状态条红色文字提示（4 秒后自动清空，保留占位避免棋盘位移）
 	if _status_label != null:
 		_status_label.text = msg
-		_status_label.visible = true
 		_status_label.add_theme_color_override("font_color", Color(0.95, 0.4, 0.35))
 		var lbl := _status_label
 		await get_tree().create_timer(4.0).timeout
 		if is_instance_valid(lbl) and lbl.text == msg:
-			lbl.visible = false
+			lbl.text = ""
 
 func _update_controls() -> void:
 	control_panel.update_state(session, _deploy_mode, _deploy_phase)
@@ -1306,15 +1356,15 @@ func _update_controls() -> void:
 
 # ===== 布局阶段 =====
 
-# 推送布局阶段状态到双方得分板（倒计时条显示在各自得分板模块0计时条位置）
+# 推送布局阶段状态到双方得分板（每方独立倒计时，显示在各自得分板模块0计时条位置）
 func _push_deploy_to_panels() -> void:
 	if black_score_panel != null and black_score_panel.has_method("set_deploy_state"):
 		black_score_panel.set_deploy_state(
-			_deploy_phase, _deploy_time_left,
+			_deploy_phase, float(_deploy_time_left.get(Const.BLACK, DEPLOY_TIME_LIMIT)),
 			int(_deploy_stones.get(Const.BLACK, 0)), DEPLOY_STONES_PER_SIDE)
 	if white_score_panel != null and white_score_panel.has_method("set_deploy_state"):
 		white_score_panel.set_deploy_state(
-			_deploy_phase, _deploy_time_left,
+			_deploy_phase, float(_deploy_time_left.get(Const.WHITE, DEPLOY_TIME_LIMIT)),
 			int(_deploy_stones.get(Const.WHITE, 0)), DEPLOY_STONES_PER_SIDE)
 
 # 布局完成/超时 → 正式开局：
@@ -1326,7 +1376,8 @@ func _begin_playing() -> void:
 	_push_deploy_to_panels()
 	if board_view != null:
 		board_view.set_deploy_phase(false)
-		# 正式开局动画：棋盘方格圆形扩散波浪（从棋盘中央向四周扩散，持续 1.7 秒）
+		# 正式开局动画：领土/边境线波浪（之前布局阶段被抑制）+ 棋盘中央圆形扩散波浪
+		board_view.replay_opening_anim()
 		board_view.play_opening_circular_wave()
 	# 重启思考时间计时（布局期间已暂停）
 	if _timer != null and session != null:

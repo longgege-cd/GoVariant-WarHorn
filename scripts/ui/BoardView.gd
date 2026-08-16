@@ -50,11 +50,13 @@ func _on_theme_changed(new_theme: BaseTheme) -> void:
 	custom_minimum_size = Vector2(_theme.board_pixel_size(), _theme.board_pixel_size())
 	queue_redraw()
 
-func set_session(s: GameSession) -> void:
+func set_session(s: GameSession, is_deploy_phase: bool = false) -> void:
 	session = s
 	last_move = Vector2i(-1, -1)
-	# 触发开局领土/边境线波浪动画
-	_opening_anim_time = OPENING_ANIM_DURATION
+	# 仅在非布局阶段（正式开局/无布局阶段模式）触发领土/边境线波浪动画；
+	# 布局阶段有自己的氛围（领土呼吸辉光 + 前线封条），不播放正式开局波浪避免覆盖整个棋盘领土
+	if not is_deploy_phase:
+		_opening_anim_time = OPENING_ANIM_DURATION
 	queue_redraw()
 
 # 设置布局阶段状态（开启后绘制布局氛围：领土呼吸辉光 + 前线封条）
@@ -208,11 +210,13 @@ func _draw_corner_seals(total_size: int) -> void:
 
 func _draw_zone_hints(total_size: int) -> void:
 	# 黑境(行0-8) 淡蓝提示；白境(行10-18) 淡金提示
+	# 方格归属：方格 gr=k 对应行k-1 到行k 之间；黑境方格 gr=0..8（行0-9之间），
+	# 白境方格 gr=9..17（行9-18之间）。两块领土紧邻行9线（边境线），不留空白带
 	var margin: int = _theme.board_margin
 	var cs: int = _theme.cell_size
-	var top_h: int = cs * 9  # 行0-8
-	var bot_y: int = margin + cs * 10  # 行10开始
-	var bot_h: int = cs * 9  # 行10-18
+	var top_h: int = cs * 9  # 黑境方格带 y=[margin, margin+cs*9]
+	var bot_y: int = margin + cs * 9  # 白境从行9线起，紧接黑境
+	var bot_h: int = cs * 9  # 白境方格带 y=[margin+cs*9, margin+cs*18]
 	# 开局方格波浪动画：每个方格按到边境线距离呈现波纹起伏
 	if _opening_anim_time > 0:
 		var progress: float = 1.0 - _opening_anim_time / OPENING_ANIM_DURATION  # 0→1
@@ -296,10 +300,10 @@ func _draw_deploy_ambience(total_size: int) -> void:
 	# 呼吸节奏（1.6s 周期，领土辉光脉动）
 	var t: float = fmod(Time.get_ticks_msec() / 1000.0, 1.6) / 1.6
 	var pulse: float = 0.5 + 0.5 * sin(t * TAU)
-	# 1. 领土呼吸辉光：黑境冷蓝 / 白境暖金
-	var top_h: int = cs * 9
-	var bot_y: int = margin + cs * 10
-	var bot_h: int = cs * 9
+	# 1. 领土呼吸辉光：黑境冷蓝 / 白境暖金（两块领土紧邻行9线，不留空白带）
+	var top_h: int = cs * 9  # 黑境方格带 y=[margin, margin+cs*9]
+	var bot_y: int = margin + cs * 9  # 白境从行9线起，紧接黑境
+	var bot_h: int = cs * 9  # 白境方格带 y=[margin+cs*9, margin+cs*18]
 	var black_glow := Color(0.35, 0.55, 0.85, 0.10 + 0.08 * pulse)
 	draw_rect(Rect2(margin, margin, cs * 18, top_h), black_glow, true)
 	var white_glow := Color(0.95, 0.78, 0.32, 0.10 + 0.08 * pulse)
@@ -566,6 +570,8 @@ func _draw_effect_overlays() -> void:
 		match type:
 			"capture":
 				_draw_capture_burst(ov, t)
+			"capture_wave":
+				_draw_capture_wave(ov, t)
 			"bounce":
 				_draw_bounce_flash(ov, t)
 			"move":
@@ -621,6 +627,47 @@ func _draw_capture_burst(ov: Dictionary, t: float) -> void:
 				var fy: float = pos.y + sin(ang) * frag_dist
 				var fs: float = 3.0 * (1.0 - t * 0.5)  # 碎片逐渐缩小
 				draw_rect(Rect2(fx - fs * 0.5, fy - fs * 0.5, fs, fs), Color(1.0, 0.7, 0.2, frag_alpha), true)
+
+# 提子波浪特效：在提子点所在行的方格向左右两个方向扩展，持续1秒
+# 设计：从提子点开始，沿其所在行的方格向左右两侧扩散，每格随波浪到达
+# 呈现橙红色脉冲（sin 0→π：0→1→0），整体1秒淡出
+func _draw_capture_wave(ov: Dictionary, t: float) -> void:
+	var positions: Array = ov.get("positions", [])
+	if positions.is_empty():
+		return
+	var margin: int = _theme.board_margin
+	var cs: int = _theme.cell_size
+	var pulse_duration: float = 0.3  # 每格脉冲持续时长
+	var alpha: float = 1.0 - t  # 整体淡出
+	for p in positions:
+		var center_col: int = p.x
+		var row: int = p.y
+		# 该位置到两端的最大距离（基于cell center），用于自适应波浪速度
+		var max_dist: float = max(float(center_col) - 0.5, 17.5 - float(center_col))
+		if max_dist < 0.1:
+			max_dist = 0.1  # 避免除零
+		# 波浪速度：在0.7秒内覆盖最大距离（剩余0.3秒让脉冲淡出）
+		var wave_speed: float = max_dist / 0.7
+		var y: float = margin + cs * row - cs * 0.5  # 行居中（覆盖交叉点上下半格）
+		for gc in 18:
+			var cell_center: float = gc + 0.5
+			var dist: float = abs(cell_center - float(center_col))
+			# 波浪到达该格的时间
+			var arrive_time: float = dist / wave_speed
+			if arrive_time > 1.0:
+				continue
+			# 该格的局部脉冲进度
+			var local_t: float = (t - arrive_time) / pulse_duration
+			if local_t < 0 or local_t > 1:
+				continue
+			# 脉冲强度：sin(0→π) 即 0→1→0
+			var pulse: float = sin(local_t * PI)
+			if pulse < 0.05:
+				continue
+			var x: float = margin + cs * gc
+			# 提子波浪色：橙红→金黄渐变（呼应提子爆裂色）
+			var c := Color(1.0, 0.55 + 0.3 * pulse, 0.15, 0.55 * pulse * alpha)
+			draw_rect(Rect2(x, y, cs, cs), c, true)
 
 # 弹子特效：橙色扩散环 + 起点终点连接线（撞隐子后弹至八格之一）
 func _draw_bounce_flash(ov: Dictionary, t: float) -> void:

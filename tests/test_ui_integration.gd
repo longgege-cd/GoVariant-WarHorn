@@ -221,21 +221,20 @@ func _run_tests() -> void:
 	t.expect(screen._ai == null, "AI 实例已清空")
 	t.expect_eq(screen.session.ply, 0, "切回 PvP 后新对局 ply=0")
 
-	# ===== 14. 状态提示条：_show_error 自动隐藏 + 颜色重置 =====
+	# ===== 14. 状态提示条：_show_error 自动清空 + 颜色重置 + 固定占位（不引起棋盘位移）
 	# 修复：_show_error 无自动隐藏导致"非您的回合"永久残留；_show_status 不重置红色
+	# 固定占位：通过 text 内容切换（非 visible），保留布局高度避免 VBoxContainer 重排导致棋盘位移
 	t.expect(screen._status_label != null, "状态条已创建")
 	screen._show_error("非您的回合")
-	t.expect(screen._status_label.visible, "错误提示显示")
 	t.expect_eq(screen._status_label.text, "非您的回合", "错误文本正确")
 	await get_tree().create_timer(4.2).timeout
-	t.expect(not screen._status_label.visible, "错误提示 4 秒后自动隐藏（不一直显示）")
+	t.expect_eq(screen._status_label.text, "", "错误提示 4 秒后自动清空（不一直显示，保留占位）")
 	# _show_error 后再 _show_status：状态文本覆盖错误文本
 	screen._show_error("测试错误")
 	screen._show_status("对局开始 · 您执黑方")
-	t.expect(screen._status_label.visible, "状态提示显示")
 	t.expect_eq(screen._status_label.text, "对局开始 · 您执黑方", "状态文本覆盖错误文本")
 	await get_tree().create_timer(10.2).timeout
-	t.expect(not screen._status_label.visible, "状态提示 10 秒后自动隐藏")
+	t.expect_eq(screen._status_label.text, "", "状态提示 10 秒后自动清空（保留占位）")
 
 	# 清理
 	screen.queue_free()
@@ -422,9 +421,10 @@ func _run_tests() -> void:
 	var dscreen: Control = preload("res://scripts/ui/GameScreen.gd").new()
 	add_child(dscreen)
 	await get_tree().process_frame
-	# 初始：进入布局阶段、2 分钟倒计时、棋盘布局氛围开启、双方得分板显示布局倒计时条
+	# 初始：进入布局阶段、双方各自 2 分钟倒计时、棋盘布局氛围开启、双方得分板显示布局倒计时条
 	t.expect(dscreen._deploy_phase, "新对局进入布局阶段")
-	t.expect(dscreen._deploy_time_left > 119.0, "布局初始倒计时约 120 秒")
+	t.expect(float(dscreen._deploy_time_left.get(Const.BLACK, 0)) > 119.0, "黑方布局初始倒计时约 120 秒")
+	t.expect(float(dscreen._deploy_time_left.get(Const.WHITE, 0)) > 119.0, "白方布局初始倒计时约 120 秒")
 	t.expect(dscreen.board_view.deploy_phase, "棋盘布局氛围已开启")
 	t.expect(dscreen.black_score_panel._deploy_active, "黑方得分板显示布局倒计时条")
 	t.expect(dscreen.white_score_panel._deploy_active, "白方得分板显示布局倒计时条")
@@ -471,16 +471,17 @@ func _run_tests() -> void:
 	dscreen._on_cell_clicked(10, 10)
 	await get_tree().process_frame
 	t.expect_eq(dscreen.session.ply, 5, "正式开局后黑可下白境（第 5 手）")
-	# 布局超时自动正式开局
+	# 布局超时自动随机布子（双方各自独立计时，时间耗尽后系统自动为该方随机布子）
 	var tscreen2: Control = preload("res://scripts/ui/GameScreen.gd").new()
 	add_child(tscreen2)
 	await get_tree().process_frame
 	t.expect(tscreen2._deploy_phase, "新对局再次进入布局阶段")
-	tscreen2._deploy_time_left = 0.05
-	await get_tree().create_timer(0.2).timeout
+	# 双方时间都设小，让黑方先耗尽 → 自动布黑 2 子；白方再耗尽 → 自动布白 2 子 → 正式开局
+	tscreen2._deploy_time_left = {Const.BLACK: 0.05, Const.WHITE: 0.05}
+	await get_tree().create_timer(0.6).timeout
 	await get_tree().process_frame
-	t.expect(not tscreen2._deploy_phase, "布局倒计时耗尽自动正式开局")
-	t.expect_eq(tscreen2.session.ply, 0, "超时开局保留已布棋子（此时 0 子）")
+	t.expect(not tscreen2._deploy_phase, "双方时间耗尽后自动随机布子并正式开局")
+	t.expect_eq(tscreen2.session.ply, 4, "超时自动布满 4 子（每方 2 子）")
 	# AI 布局偏好点合法性：必须全部位于己方领土（不含边境线）
 	var pref_ok_black: bool = true
 	for p in dscreen.DEPLOY_PREF_BLACK:

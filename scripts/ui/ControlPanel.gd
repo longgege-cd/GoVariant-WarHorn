@@ -1,8 +1,8 @@
-# 控制面板：精简按钮（悔棋/虚手/设置）
+# 控制面板：精简按钮（悔棋/虚手/认输/设置）
 #
 # 设计：
-#   - 仅显示 3 个常用按钮：悔棋、虚手、设置（ESC 菜单）
-#   - 其他功能（新局/认输/部署/主题/模式/联机）移入 ESC 暂停菜单
+#   - 显示 4 个常用按钮：悔棋、虚手、认输、设置（ESC 菜单）
+#   - 其他功能（新局/部署/主题/模式/联机）移入 ESC 暂停菜单
 #   - 隐藏按钮仍保留变量供 update_state 引用，避免空引用
 extends HBoxContainer
 
@@ -60,6 +60,10 @@ func _build_ui() -> void:
 	_pass_btn.pressed.connect(func(): pass_pressed.emit())
 	add_child(_pass_btn)
 
+	_resign_btn = _make_button("认 输 (R)", 100, 36)
+	_resign_btn.pressed.connect(func(): resign_pressed.emit())
+	add_child(_resign_btn)
+
 	_menu_btn = _make_button("≡ 设 置 (ESC)", 120, 36)
 	_menu_btn.pressed.connect(func(): menu_pressed.emit())
 	add_child(_menu_btn)
@@ -69,11 +73,6 @@ func _build_ui() -> void:
 	_new_game_btn.visible = false
 	_new_game_btn.pressed.connect(func(): new_game_pressed.emit())
 	add_child(_new_game_btn)
-
-	_resign_btn = _make_button("认输", 60, 30)
-	_resign_btn.visible = false
-	_resign_btn.pressed.connect(func(): resign_pressed.emit())
-	add_child(_resign_btn)
 
 	_deploy_btn = _make_button("部署(S)", 70, 30)
 	_deploy_btn.visible = false

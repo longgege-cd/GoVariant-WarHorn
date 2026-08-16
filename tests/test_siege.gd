@@ -238,3 +238,93 @@ func run(t: TestFramework) -> void:
 	t.expect(b13_sieged, "13: 白B 中环被黑C 有效包围→围困（死棋）")
 	t.expect(not a13_sieged, "13: 黑A 被死棋白B 围住→活棋（v6.2 有效包围圈）")
 	t.expect(not c13_sieged, "13: 黑C 大环活棋")
+
+	# 14. 角部围困 via solve_dead_alive 迭代算法（非单步 is_sieged）
+	# 场景同 7 但用全盘迭代求解，验证不动点算法在角部边缘场景正确识别围困
+	# 白(0,1)(1,0)(1,1) 唯一气=角部(0,0)（边缘空点），被黑(0,2)(1,2)(2,0)(2,1)(2,2)+边缘封闭
+	# 旧算法误判"触及边缘→不被包围"；v6.2「外部=含最多边缘点的非墙连通分量」语义下角部(0,0)属洞腔非外部
+	b = BoardModel.new()
+	b.set_at(0, 1, Const.WHITE); b.set_at(1, 0, Const.WHITE); b.set_at(1, 1, Const.WHITE)
+	b.set_at(0, 2, Const.BLACK); b.set_at(1, 2, Const.BLACK); b.set_at(2, 2, Const.BLACK)
+	b.set_at(2, 0, Const.BLACK); b.set_at(2, 1, Const.BLACK)
+	var da14: Dictionary = SiegeDetector.solve_dead_alive(b)
+	var w14_sieged := false
+	var bk14_sieged := false
+	for sg in da14.sieged:
+		if sg.color == Const.WHITE:
+			w14_sieged = true
+		else:
+			bk14_sieged = true
+	t.expect(w14_sieged, "14: 角部白子被黑+边缘封闭→围困（迭代算法识别）")
+	t.expect(not bk14_sieged, "14: 黑色围困方活棋（有外部气）")
+
+	# 15. 角部嵌套围困：黑C外环(用棋盘边缘)→白B中环→黑A内子（三层依赖）
+	# 11路棋盘左上角布局：
+	#   row0: B B B B B . . . . . .   黑C 顶（用棋盘上边缘）
+	#   row1: B W W W B . . . . . .   白B 顶
+	#   row2: B W . W B . . . . . .   (2,2) 空 = 黑A/白B 共享唯一气
+	#   row3: B W B W B . . . . . .   (3,2)=黑A 内子
+	#   row4: B B B B B . . . . . .   黑C 底
+	# 黑C 外环活（外部气=row5 各点）；白B 中环被 C 围困（气=(2,2) 1点<4）；黑A 内子被 B 围
+	# 迭代：iter1 全活→A,B 围困；iter2 B死→A 活（B 不作墙），B 仍被 C 围→收敛于 {B}
+	# 验证：(1) 角部+边缘几何正确；(2) 嵌套死活依赖迭代收敛；(3) 内层组因中环死而活
+	b = BoardModel.new(11)
+	# 黑C 外环：row0/row4 cols0-4 + rows1-3 cols0,4
+	for c in range(0, 5):
+		b.set_at(0, c, Const.BLACK)
+		b.set_at(4, c, Const.BLACK)
+	for r in range(1, 4):
+		b.set_at(r, 0, Const.BLACK)
+		b.set_at(r, 4, Const.BLACK)
+	# 白B 中环：row1/row3 cols1-3 + row2 cols1,3（(2,2)留空）
+	for c in range(1, 4):
+		b.set_at(1, c, Const.WHITE)
+		b.set_at(3, c, Const.WHITE)
+	b.set_at(2, 1, Const.WHITE)
+	b.set_at(2, 3, Const.WHITE)
+	# 黑A 内子 (3,2) 在白B 环内
+	b.set_at(3, 2, Const.BLACK)
+	var da15: Dictionary = SiegeDetector.solve_dead_alive(b)
+	var a15_sieged := false
+	var b15_sieged := false
+	var c15_sieged := false
+	for sg in da15.sieged:
+		# 区分三个组群：黑A 单子(3,2)、白B 中环(7子)、黑C 外环
+		if sg.color == Const.WHITE:
+			b15_sieged = true
+		elif sg.stones.size() == 1 and sg.stones[0] == Vector2i(2, 3):
+			a15_sieged = true  # Black A at (col=2, row=3)
+		else:
+			c15_sieged = true
+	t.expect(b15_sieged, "15: 白B 中环被黑C 有效包围+唯一气(2,2)<4→围困")
+	t.expect(not a15_sieged, "15: 黑A 内子因白B 死棋不作墙→活棋（v6.2 嵌套依赖）")
+	t.expect(not c15_sieged, "15: 黑C 外环活棋（有 row5 外部气）")
+
+	# 16. 双活僵局循环检测：_max_sieged 单元测试
+	# 真实"两组互为唯一墙且都能经对方死而逃逸"的位置在 2D 棋盘上几何上几乎不可达
+	# （两组互相完全包围且互为唯一墙需要 yin-yang 拓扑），故直接验证循环检测逻辑
+	# 模拟 solve_dead_alive 内部 state_log 振荡：
+	#   iter1: {A} 围困（A 被 B 活墙围）
+	#   iter2: {} 全活（A 死→B 无墙→B 活；B 活→A 又被围... 但 B 活会让 A 死，回到 iter1）
+	#   iter3: {A} 与 iter1 相同 → 检测到循环 → _max_sieged 取围困最多者 = {A}
+	var state_log16: Array = [
+		{"A": true},
+		{},
+	]
+	var max_state: Dictionary = SiegeDetector._max_sieged(state_log16)
+	t.expect_eq(max_state.size(), 1, "16: _max_sieged 选围困最多的状态（size=1 > 0）")
+	t.expect(max_state.has("A"), "16: _max_sieged 选中包含 A 的状态")
+	# 多组振荡：{A,B} vs {} → 取 {A,B}
+	var state_log16b: Array = [
+		{"A": true, "B": true},
+		{},
+	]
+	var max_state_b: Dictionary = SiegeDetector._max_sieged(state_log16b)
+	t.expect_eq(max_state_b.size(), 2, "16b: 双组振荡 _max_sieged 选 {A,B}（size=2 > 0）")
+	# 三态振荡：{A} vs {B} vs {A} → 取围困最多者（两个都 size=1，取第一个匹配的）
+	var state_log16c: Array = [
+		{"A": true},
+		{"B": true},
+	]
+	var max_state_c: Dictionary = SiegeDetector._max_sieged(state_log16c)
+	t.expect(max_state_c.size() >= 1, "16c: 多态振荡 _max_sieged 至少返回 1 个围困（保守判死）")

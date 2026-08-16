@@ -26,6 +26,11 @@ func play_capture(captured_positions: Array, capturer_color: int) -> void:
 		"positions": captured_positions,
 		"capturer_color": capturer_color,
 	})
+	# 提子波浪特效：在提子点所在行的方格向左右扩散，持续1秒
+	effect_started.emit("capture_wave", {
+		"positions": captured_positions,
+		"capturer_color": capturer_color,
+	})
 
 # 弹子特效：撞隐子后弹至周围八格（重叠位置 → 弹子落点）
 func play_bounce(overlap_pos: Vector2i, placed_pos: Vector2i, mover_color: int) -> void:

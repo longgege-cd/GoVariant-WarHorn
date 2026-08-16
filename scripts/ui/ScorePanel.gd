@@ -51,7 +51,7 @@ var _avatar_tex: ImageTexture = null
 var _avatar_radius: float = 30.0  # 头像绘制半径
 # 布局阶段状态（GameScreen 每帧推送）：布局倒计时条显示在模块0计时条位置
 var _deploy_active: bool = false  # 是否处于布局阶段
-var _deploy_time_left: float = 120.0  # 共享布局剩余秒
+var _deploy_time_left: float = 120.0  # 本方独立布局剩余秒
 var _deploy_stones: int = 0  # 本方已布子数
 var _deploy_total: int = 2  # 本方应布子总数
 # 分数条动态基准：各分量历史最大值（只增不减），条形随分数增长而变长，不因其他分量变化抖动
@@ -433,7 +433,7 @@ func set_timer(t: TimerSystem) -> void:
 	queue_redraw()
 
 # 布局阶段状态（GameScreen 每帧推送）
-# active: 布局是否进行中；time_left: 共享剩余秒；stones: 本方已布子数；total: 本方应布子总数
+# active: 布局是否进行中；time_left: 本方独立剩余秒；stones: 本方已布子数；total: 本方应布子总数
 func set_deploy_state(active: bool, time_left: float, stones: int, total: int) -> void:
 	var changed: bool = _deploy_active != active or absf(_deploy_time_left - time_left) > 0.3 \
 		or _deploy_stones != stones or _deploy_total != total
@@ -922,7 +922,7 @@ func _draw_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) ->
 	# 时间数字居中显示在计时条上方，紧贴计时条留 2px 缝隙
 	font.draw_string(get_canvas_item(), Vector2(x + w * 0.5, y - 2), time_str, HORIZONTAL_ALIGNMENT_CENTER, -1, label_fs, num_c)
 
-# 布局阶段计时条（模块0位置）：共享 2 分钟倒计时
+# 布局阶段计时条（模块0位置）：本方独立 2 分钟倒计时
 #   行棋方：金色呼吸灯脉动（突出显示"轮到谁布局"）+ 流光；非行棋方：正常显示
 #   剩余<30s 整条红色呼吸
 func _draw_deploy_timer_bar(x: float, y: float, w: float, h: float, is_active: bool) -> void:

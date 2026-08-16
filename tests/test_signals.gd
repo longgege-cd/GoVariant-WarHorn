@@ -167,89 +167,87 @@ func run(t: TestFramework) -> void:
 	var fail_undo = s.undo()
 	t.expect(not fail_undo.ok, "终局后悔棋失败")
 
-	# 11. 虚手限制：每方每局 2 次，同一方不得连续虚手
+	# 11. 虚手冷却：自上次虚手后需 2 个己方回合才能再次虚手
 	s = GameSession.new(Const.KOMI_DEFAULT, false)
 	s.emit_signals = false
 	var p1 = s.do_pass(Const.BLACK)
-	t.expect(p1.ok, "PASS1: 黑第1次虚手成功")
+	t.expect(p1.ok, "PASS1: 黑首次虚手成功（初始冷却=2）")
 	t.expect_eq(s.to_move, Const.WHITE, "PASS1: 虚手后轮到白")
 	t.expect_eq(p1.mover_color, Const.BLACK, "PASS1: 虚手 outcome 记录行棋方为黑（日志颜色修正回归）")
 	t.expect_eq(p1.placed, Vector2i(-1, -1), "PASS1: 虚手 placed=(-1,-1)")
-	# 连续虚手守卫：轮次交替下同一方天然不会连续两回合，这里直接构造状态验证守卫逻辑
-	s.last_pass_color = Const.BLACK
-	s.to_move = Const.BLACK
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 0, "PASS1: 虚手后黑冷却重置为0")
+	# 黑立即虚手被拒（冷却中，0<2）
+	s.to_move = Const.BLACK  # 强制轮到黑验证守卫
 	var p2 = s.do_pass(Const.BLACK)
-	t.expect(not p2.ok, "PASS2: 黑连续虚手被拒")
-	t.expect(p2.reason.contains("连续"), "PASS2: 拒绝原因含'连续'（%s）" % p2.reason)
-	t.expect_eq(s.pass_counts[Const.BLACK], 1, "PASS2: 黑虚手计数仍为1")
+	t.expect(not p2.ok, "PASS2: 黑连续虚手被拒（冷却中）")
+	t.expect(p2.reason.contains("冷却"), "PASS2: 拒绝原因含'冷却'（%s）" % p2.reason)
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 0, "PASS2: 黑冷却仍为0")
 	t.expect_eq(s.consecutive_passes, 1, "PASS2: 连续虚手计数未增加")
-	s.to_move = Const.WHITE  # 恢复真实轮次（PASS2 为验证守卫手动改过）
+	# 白落子 → 白冷却不变（白从未虚过手，初始即满=2）；黑冷却也不变
+	s.to_move = Const.WHITE
 	var w1 = s.play_move(Const.WHITE, 9, 9)
 	t.expect(w1.ok, "PASS3: 白落子成功")
-	t.expect_eq(s.last_pass_color, Const.EMPTY, "PASS3: 落子后 last_pass_color 重置")
+	t.expect_eq(s.pass_cooldown[Const.WHITE], 2, "PASS3: 白落子后白冷却仍=2（白从未虚过手）")
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 0, "PASS3: 黑冷却仍为0（白落子不增加黑冷却）")
+	# 黑虚手被拒（冷却0<2，还需2个己方回合）
 	var p3 = s.do_pass(Const.BLACK)
-	t.expect(p3.ok, "PASS4: 对方落子后黑可再虚手")
-	t.expect_eq(s.pass_counts[Const.BLACK], 2, "PASS4: 黑虚手计数=2")
-	var p4 = s.do_pass(Const.WHITE)
-	t.expect(p4.ok, "PASS5: 白第1次虚手")
-	t.expect(s.game_over, "PASS5: 双方连续虚手→终局")
+	t.expect(not p3.ok, "PASS4: 黑虚手被拒（还需2个己方回合）")
+	t.expect(p3.reason.contains("2"), "PASS4: 拒绝原因含'2'（%s）" % p3.reason)
+	t.expect_eq(s.to_move, Const.BLACK, "PASS4: 拒后仍轮到黑（未成手）")
+	# 黑落子1次 → 冷却=1
+	s.play_move(Const.BLACK, 10, 10)
+	s.play_move(Const.WHITE, 11, 11)
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 1, "PASS5: 黑落子1次后冷却=1")
+	# 黑虚手被拒（冷却1<2，还需1个己方回合）
+	var p4 = s.do_pass(Const.BLACK)
+	t.expect(not p4.ok, "PASS6: 黑虚手被拒（还需1个己方回合）")
+	t.expect(p4.reason.contains("1"), "PASS6: 拒绝原因含'1'（%s）" % p4.reason)
+	# 黑落子2次 → 冷却=2，可虚手
+	s.play_move(Const.BLACK, 8, 8)
+	s.play_move(Const.WHITE, 12, 12)
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 2, "PASS7: 黑落子2次后冷却=2")
 	var p5 = s.do_pass(Const.BLACK)
-	t.expect(not p5.ok, "PASS6: 终局后虚手被拒")
+	t.expect(p5.ok, "PASS8: 冷却满2回合后黑可再次虚手")
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 0, "PASS8: 虚手后冷却重置为0")
 
-	# 12. 每方 2 次上限：第 3 次虚手被拒
-	s = GameSession.new(Const.KOMI_DEFAULT, false)
-	s.emit_signals = false
-	s.do_pass(Const.BLACK)                      # 黑1
-	s.play_move(Const.WHITE, 9, 9)              # 白落子（重置连续虚手）
-	s.do_pass(Const.BLACK)                      # 黑2
-	s.play_move(Const.WHITE, 10, 10)
-	var q1 = s.do_pass(Const.BLACK)             # 黑3 → 拒
-	t.expect(not q1.ok, "PASS7: 黑第3次虚手被拒（每方2次上限）")
-	t.expect(q1.reason.contains("用尽"), "PASS7: 拒绝原因含'用尽'（%s）" % q1.reason)
-	t.expect_eq(s.pass_counts[Const.BLACK], 2, "PASS7: 黑虚手计数=2")
-	t.expect_eq(s.to_move, Const.BLACK, "PASS7: 拒后仍轮到黑（无法虚手只能落子）")
-	s.play_move(Const.BLACK, 8, 8)              # 黑只能落子
-	s.do_pass(Const.WHITE)                      # 白1
-	s.play_move(Const.BLACK, 7, 7)
-	s.do_pass(Const.WHITE)                      # 白2
-	s.play_move(Const.BLACK, 6, 6)
-	var q2 = s.do_pass(Const.WHITE)             # 白3 → 拒
-	t.expect(not q2.ok, "PASS8: 白第3次虚手被拒（每方2次上限）")
-	t.expect_eq(s.pass_counts[Const.WHITE], 2, "PASS8: 白虚手计数=2")
-
-	# 13. 悔棋恢复虚手状态
-	s = GameSession.new(Const.KOMI_DEFAULT, false)
-	s.emit_signals = false
-	s.do_pass(Const.BLACK)                      # 黑1
-	s.play_move(Const.WHITE, 9, 9)              # 白落子
-	t.expect_eq(s.pass_counts[Const.BLACK], 1, "PASS9: 悔棋前黑虚手1次")
-	t.expect_eq(s.last_pass_color, Const.EMPTY, "PASS9: 悔棋前 last_pass_color=EMPTY")
-	s.undo()                                    # 悔掉白落子
-	t.expect_eq(s.last_pass_color, Const.BLACK, "PASS9: 悔棋后 last_pass_color=BLACK（黑虚手状态恢复）")
-	t.expect_eq(s.to_move, Const.WHITE, "PASS9: 悔棋后轮到白")
-	s.undo()                                    # 悔掉黑虚手
-	t.expect_eq(s.pass_counts[Const.BLACK], 0, "PASS9: 悔棋后黑虚手计数恢复0")
-
-	# 14. clone 同步虚手状态 + skip_pass_limits 绕过（回放旧棋谱）
+	# 12. 双方连续虚手 → 终局
 	s = GameSession.new(Const.KOMI_DEFAULT, false)
 	s.emit_signals = false
 	s.do_pass(Const.BLACK)
+	var w2 = s.do_pass(Const.WHITE)  # 白首次虚手（白冷却初始=2，可虚手）
+	t.expect(w2.ok, "PASS9: 白首次虚手成功")
+	t.expect(s.game_over, "PASS9: 双方连续虚手→终局")
+	var p6 = s.do_pass(Const.BLACK)
+	t.expect(not p6.ok, "PASS10: 终局后虚手被拒")
+
+	# 13. 悔棋恢复虚手冷却状态
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	s.do_pass(Const.BLACK)                      # 黑虚手，冷却[BLACK]=0
+	s.play_move(Const.WHITE, 9, 9)              # 白落子，冷却[WHITE]=1
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 0, "PASS11: 悔棋前黑冷却=0")
+	s.undo()                                    # 悔掉白落子
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 0, "PASS11: 悔棋后黑冷却仍=0（黑虚手状态恢复）")
+	t.expect_eq(s.to_move, Const.WHITE, "PASS11: 悔棋后轮到白")
+	s.undo()                                    # 悔掉黑虚手
+	t.expect_eq(s.pass_cooldown[Const.BLACK], 2, "PASS11: 悔到黑虚手前冷却=2（初始值）")
+
+	# 14. clone 同步虚手冷却 + skip_pass_limits 绕过（回放旧棋谱）
+	s = GameSession.new(Const.KOMI_DEFAULT, false)
+	s.emit_signals = false
+	s.do_pass(Const.BLACK)                      # 黑虚手，冷却[BLACK]=0
 	var cloned = s.clone()
-	t.expect_eq(cloned.pass_counts[Const.BLACK], 1, "PASS10: clone 同步黑虚手计数")
-	t.expect_eq(cloned.last_pass_color, Const.BLACK, "PASS10: clone 同步 last_pass_color")
+	t.expect_eq(cloned.pass_cooldown[Const.BLACK], 0, "PASS12: clone 同步黑冷却=0")
 	cloned.to_move = Const.BLACK
 	var pc = cloned.do_pass(Const.BLACK)
-	t.expect(not pc.ok and pc.reason.contains("连续"), "PASS10: clone 上黑连续虚手同样被拒")
+	t.expect(not pc.ok and pc.reason.contains("冷却"), "PASS12: clone 上黑连续虚手同样被拒")
 	s = GameSession.new(Const.KOMI_DEFAULT, false)
 	s.emit_signals = false
 	s.skip_pass_limits = true
-	s.last_pass_color = Const.BLACK  # 模拟黑上一手虚手
-	var sp1 = s.do_pass(Const.BLACK)  # 绕过连续限制 → 成功
-	t.expect(sp1.ok, "PASS11: skip_pass_limits 绕过连续虚手限制")
-	t.expect_eq(s.pass_counts[Const.BLACK], 1, "PASS11: 绕过时虚手计数照常累计")
-	var sp2 = s.do_pass(Const.WHITE)
-	t.expect(sp2.ok, "PASS11: 白虚手成功")
-	t.expect(s.game_over, "PASS11: 双方连续虚手（旧规则）→终局")
+	s.do_pass(Const.BLACK)                      # 黑虚手（绕过冷却限制）
+	var sp1 = s.do_pass(Const.WHITE)             # 白虚手
+	t.expect(sp1.ok, "PASS13: skip_pass_limits 下白虚手成功")
+	t.expect(s.game_over, "PASS13: 双方连续虚手（旧规则）→终局")
 
 # 信号回调
 func _on_move(outcome: Dictionary) -> void:

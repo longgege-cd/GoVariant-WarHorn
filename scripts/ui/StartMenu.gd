@@ -495,7 +495,7 @@ func _add_mode_item(parent: Container, idx: int) -> void:
 	desc_lbl.size_flags_horizontal = SIZE_EXPAND_FILL
 	hbox.add_child(desc_lbl)
 
-	_items.append({"item": item, "idx": idx, "name_lbl": name_lbl, "indicator": indicator})
+	_items.append({"item": item, "idx": idx, "name_lbl": name_lbl, "desc_lbl": desc_lbl, "indicator": indicator})
 
 func _make_item_style(active: bool, hover: bool) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()

@@ -530,7 +530,7 @@ func _draw_captured_markers() -> void:
 		if session != null and session.board.get_at(y, x) != Const.EMPTY:
 			continue
 		var pos: Vector2 = _cell_to_pixel(y, x)
-		draw_rect(Rect2(pos.x - s, pos.y - s, s * 2.0, s * 2.0), box_color, false, lw)
+		draw_rect(Rect2(pos.x - s, pos.y - s, s * 2.0, s * 2.0), box_color, false, lw * 0.5)
 
 # 最后一手棋行列线高亮
 func _draw_last_move_lines() -> void:

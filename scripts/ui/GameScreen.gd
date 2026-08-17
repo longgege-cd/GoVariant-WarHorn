@@ -484,6 +484,8 @@ func _new_game() -> void:
 	_deploy_stones = {Const.BLACK: 0, Const.WHITE: 0}
 	_deploy_time_left = {Const.BLACK: DEPLOY_TIME_LIMIT, Const.WHITE: DEPLOY_TIME_LIMIT}
 	_deploy_timeout_triggered = {Const.BLACK: false, Const.WHITE: false}
+	if _deploy_phase:
+		_show_status(LocaleManager.L("game.deploying"), false)
 	if board_view != null:
 		board_view.set_deploy_phase(_deploy_phase)
 	# 布局阶段暂停思考时间计时（布局使用独立的 2 分钟倒计时）
@@ -1325,14 +1327,16 @@ func _update_status() -> void:
 	# 文字状态栏已移除，行棋方由得分板高亮指示
 	pass
 
-func _show_status(msg: String) -> void:
+func _show_status(msg: String, auto_clear: bool = true) -> void:
 	# 状态提示条：切换 text 内容而非 visible，固定占位避免棋盘位移
 	if _status_label == null:
 		return
 	_status_label.text = msg
 	# 重置为金色（覆盖此前 _show_error 的红色）
 	_status_label.add_theme_color_override("font_color", preload("res://scripts/ui/UITheme.gd").C_GOLD)
-	# 10 秒后自动清空文字（保留占位高度，避免棋盘位移）
+	# 10 秒后自动清空文字（保留占位高度，避免棋盘位移）；阶段提示（如"正在布局"）关闭自动清空
+	if not auto_clear:
+		return
 	var lbl := _status_label
 	await get_tree().create_timer(10.0).timeout
 	if is_instance_valid(lbl) and lbl.text == msg:
@@ -1378,6 +1382,9 @@ func _begin_playing() -> void:
 	if not _deploy_phase:
 		return
 	_deploy_phase = false
+	# 清除"正在布局"阶段提示
+	if _status_label != null and _status_label.text == LocaleManager.L("game.deploying"):
+		_status_label.text = ""
 	_push_deploy_to_panels()
 	if board_view != null:
 		board_view.set_deploy_phase(false)

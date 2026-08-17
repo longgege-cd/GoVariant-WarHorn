@@ -156,6 +156,7 @@ func _init_translations() -> void:
 	_add("ai.master_desc", "更深搜索+更多模拟", "Deeper search + more simulations")
 
 	# ===== 对局内消息（GameScreen）=====
+	_add("game.deploying", "正在布局", "Deploying…")
 	_add("game.start_black", "对局开始 · 您执黑方 · 第 1 手", "Game start · You are Black · Move 1")
 	_add("game.start_white", "对局开始 · 您执白方 · 第 1 手", "Game start · You are White · Move 1")
 	_add("game.not_your_turn", "非您的回合", "Not your turn")

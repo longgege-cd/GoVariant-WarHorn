@@ -23,6 +23,9 @@ func _run_tests() -> void:
 	t.expect(EffectsPlayer != null, "EffectsPlayer autoload 可用")
 	t.expect(Log != null, "Log autoload 可用")
 	t.expect(ThemeManager.current != null, "ThemeManager.current 初始化非 null")
+	# 测试断言硬编码中文文本，强制切回中文避免受 user://settings.cfg 持久化语言影响
+	if LocaleManager != null:
+		LocaleManager.set_locale(LocaleManager.LOCALE_ZH)
 
 	# 1. 实例化 GameScreen
 	var screen_script := preload("res://scripts/ui/GameScreen.gd")

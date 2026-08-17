@@ -20,6 +20,9 @@ var show_territory: bool = true
 var show_siege_markers: bool = true
 var show_last_move: bool = true
 var observer_view: int = -1  # -1=观战(全可见)；否则仅该方视角隐子可见，对手隐子隐藏
+# 提过子的点：红色小方框标记（历史提子位置，悔棋回退）
+var captured_points: Dictionary = {}  # idx -> true
+var _capture_undo_stack: Array = []  # 每手行棋的提子点数组（悔棋时 pop 回退标记）
 # 特效层叠加（用于动画）
 var effect_overlays: Array = []  # Array[Dictionary] {type, ...}
 
@@ -53,6 +56,8 @@ func _on_theme_changed(new_theme: BaseTheme) -> void:
 func set_session(s: GameSession, is_deploy_phase: bool = false) -> void:
 	session = s
 	last_move = Vector2i(-1, -1)
+	captured_points.clear()
+	_capture_undo_stack.clear()
 	# 仅在非布局阶段（正式开局/无布局阶段模式）触发领土/边境线波浪动画；
 	# 布局阶段有自己的氛围（领土呼吸辉光 + 前线封条），不播放正式开局波浪避免覆盖整个棋盘领土
 	if not is_deploy_phase:
@@ -80,6 +85,17 @@ func on_move_committed(outcome: Dictionary) -> void:
 		last_move = outcome.placed
 	else:
 		last_move = Vector2i(-1, -1)
+	# 提子点标记：正常行棋追加，悔棋回退
+	var is_undo: bool = outcome.get("type", "") == "undo"
+	if is_undo:
+		if _capture_undo_stack.size() > 0:
+			for p in _capture_undo_stack.pop_back():
+				captured_points.erase(p.y * Const.BOARD_SIZE + p.x)
+	else:
+		var caps: Array = outcome.get("captures", [])
+		_capture_undo_stack.append(caps.duplicate())
+		for p in caps:
+			captured_points[p.y * Const.BOARD_SIZE + p.x] = true
 	queue_redraw()
 
 # 检查某位置是否是当前观察视角下不可见的隐子（对方未现形特种部队）
@@ -153,6 +169,8 @@ func _draw() -> void:
 	# 9. 围困标记
 	if show_siege_markers:
 		_draw_siege_markers()
+	# 9.5 提子点红色小方框标记（历史提子位置）
+	_draw_captured_markers()
 	# 10. 最后一手棋行列线高亮 + 标记
 	if show_last_move:
 		_draw_last_move_lines()
@@ -496,6 +514,23 @@ func _draw_siege_cross_icon(center: Vector2, radius: float) -> void:
 	# 两条对角线交叉
 	draw_line(center - Vector2(arm, arm), center + Vector2(arm, arm), cross_color, lw)
 	draw_line(center - Vector2(arm, -arm), center + Vector2(arm, -arm), cross_color, lw)
+
+# 提子点红色小方框标记（历史提子位置，悔棋回退）
+func _draw_captured_markers() -> void:
+	if captured_points.is_empty():
+		return
+	var r: float = _theme.stone_radius()
+	var box_color: Color = Color(1.0, 0.15, 0.15, 0.9)  # 红色
+	var s: float = r * 0.8  # 半框长（小于棋子半径，不遮住后续棋子）
+	var lw: float = max(1.5, r * 0.10)  # 线宽随棋子尺寸缩放
+	for idx in captured_points:
+		var y: int = idx / Const.BOARD_SIZE
+		var x: int = idx % Const.BOARD_SIZE
+		# 该点已被后续棋子占据时不画框（仅标注当前为空点的历史提子位置）
+		if session != null and session.board.get_at(y, x) != Const.EMPTY:
+			continue
+		var pos: Vector2 = _cell_to_pixel(y, x)
+		draw_rect(Rect2(pos.x - s, pos.y - s, s * 2.0, s * 2.0), box_color, false, lw)
 
 # 最后一手棋行列线高亮
 func _draw_last_move_lines() -> void:

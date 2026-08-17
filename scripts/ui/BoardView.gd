@@ -521,7 +521,7 @@ func _draw_captured_markers() -> void:
 		return
 	var r: float = _theme.stone_radius()
 	var box_color: Color = Color(1.0, 0.15, 0.15, 0.9)  # 红色
-	var s: float = r * 0.8  # 半框长（小于棋子半径，不遮住后续棋子）
+	var s: float = r * 0.4  # 半框长（缩小后小于棋子半径，不遮住后续棋子）
 	var lw: float = max(1.5, r * 0.10)  # 线宽随棋子尺寸缩放
 	for idx in captured_points:
 		var y: int = idx / Const.BOARD_SIZE

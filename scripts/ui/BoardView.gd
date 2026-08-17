@@ -515,22 +515,27 @@ func _draw_siege_cross_icon(center: Vector2, radius: float) -> void:
 	draw_line(center - Vector2(arm, arm), center + Vector2(arm, arm), cross_color, lw)
 	draw_line(center - Vector2(arm, -arm), center + Vector2(arm, -arm), cross_color, lw)
 
-# 提子点红色小方框标记（历史提子位置，悔棋回退）
+# 提子点紫色菱形标记（历史提子位置，悔棋回退）
 func _draw_captured_markers() -> void:
 	if captured_points.is_empty():
 		return
 	var r: float = _theme.stone_radius()
-	var box_color: Color = Color(1.0, 0.15, 0.15, 0.9)  # 红色
-	var s: float = r * 0.4  # 半框长（缩小后小于棋子半径，不遮住后续棋子）
-	var lw: float = max(1.5, r * 0.10)  # 线宽随棋子尺寸缩放
+	var diamond_color: Color = Color(0.72, 0.30, 0.95, 0.9)  # 紫色
+	var half: float = r * 0.4  # 菱形半对角线长（小于棋子半径，不遮住后续棋子）
 	for idx in captured_points:
 		var y: int = idx / Const.BOARD_SIZE
 		var x: int = idx % Const.BOARD_SIZE
-		# 该点已被后续棋子占据时不画框（仅标注当前为空点的历史提子位置）
+		# 该点已被后续棋子占据时不画菱形（仅标注当前为空点的历史提子位置）
 		if session != null and session.board.get_at(y, x) != Const.EMPTY:
 			continue
 		var pos: Vector2 = _cell_to_pixel(y, x)
-		draw_rect(Rect2(pos.x - s, pos.y - s, s * 2.0, s * 2.0), box_color, false, lw * 0.5)
+		var pts := PackedVector2Array([
+			pos + Vector2(0, -half),
+			pos + Vector2(half, 0),
+			pos + Vector2(0, half),
+			pos + Vector2(-half, 0),
+		])
+		draw_colored_polygon(pts, diamond_color)
 
 # 最后一手棋行列线高亮
 func _draw_last_move_lines() -> void:

@@ -1,0 +1,445 @@
+# "War Horn · Borderline" Rulebook v6.2
+
+**Type**: Two-player turn-based strategy board game
+**Duration**: 30–60 minutes per game (online)
+
+## Part I: Core Rules
+
+### Chapter 1: The Board & Forces
+
+#### 1.1 The Board
+
+- 19×19 board (361 intersection points).
+- **Row 10 = the Borderline**, belonging to neither side.
+- **Rows 1–9 = Black's territory**; its boundaries include the top edge and the row 1–9 segments of the left and right edges.
+- **Rows 11–19 = White's territory**; its boundaries include the bottom edge and the row 11–19 segments of the left and right edges.
+
+#### 1.2 Forces
+
+- Each side has a force limit (default 120 stones, configurable), non-renewable.
+- A side that runs out of stones cannot place any more; when neither side can place a stone, the game ends immediately.
+
+### Chapter 2: Scoring Overview
+
+**Total Score = Occupation + Defense − Casualties**
+
+All scores are computed live and dynamically during play.
+
+| Score Type | Components | Description |
+|---|---|---|
+| **Occupation** | Live stones + Territory | Control exerted in the opponent's territory |
+| **Defense** | Annihilation + Siege | Defensive results in your own territory |
+| **Casualties** | — | The cost of being captured |
+
+#### 2.1 Komi
+
+**White receives +0.5 points of komi compensation.**
+
+- At endgame settlement, White's total is increased by 0.5.
+- Since all scores are integers, this is equivalent to: **when the totals are equal, White wins**.
+- Komi only affects the endgame win/loss decision; it does not change the in-game score display.
+
+### Chapter 3: Occupation Score
+
+**Occupation = Live Stones + Territory**
+
+#### 3.1 Live Stones
+
+**Definition**: A stone placed in the **opponent's territory** or on the **Borderline** immediately earns +1 live-stone point if it has liberties after placement. No upper limit.
+
+| Trigger | Change |
+|---|---|
+| Placed in the **opponent's territory** or on the **Borderline**, with liberties after placement | +1/stone |
+| Captured (under any circumstances) | −1/stone |
+| Judged as sieged | −1/stone |
+| Siege lifted (making eyes / breaking out / empty points restored) | +1/stone |
+
+**Has liberties**: the connected group containing the stone has at least one adjacent empty intersection.
+
+#### 3.2 Territory Score
+
+The full territory rules are described in **Chapter 4: Enclosures and Territory**.
+
+### Chapter 4: Enclosures and Territory
+
+#### 4.1 Definition and Judgment of an Enclosure
+
+**Enclosure**: a fully closed geometric boundary formed on the board by one side's stones.
+
+**Components**:
+- **Enclosing stones**: your own stones that connect directly or indirectly through up/down/left/right adjacency, forming a continuous wall.
+- **Board edges**: the four edges act as natural walls and may participate in an enclosure, but the **two endpoints** of the participating edge segments must be occupied by stones.
+- **Closure**: the boundary connects end to end with no gap.
+
+**Judgment**: purely geometric. Starting from any point outside the enclosure, one must pass through the enclosing side's stone chain or a board edge to reach the interior.
+
+**Impure boundary stones**: a closed region jointly formed by both sides' stones is not recognized as an enclosure for either side.
+
+**Valid enclosure**: an enclosure formed by **live** stones. Enclosures formed by sieged stones are invalid.
+
+#### 4.2 Territory Score Calculation
+
+**Basic calculation**: forming a valid enclosure in the opponent's territory or on the Borderline earns **+2 points per enclosed intersection**.
+
+**Deduct the opponent's live stones**: intersections occupied by the opponent's live stones inside the enclosure do not count toward the territory score.
+
+**Opponent's sieged stones**: intersections occupied by the opponent's sieged stones inside the enclosure DO count toward the enclosing side's territory score (captured).
+
+**Own stones**: intersections occupied by your own stones inside the enclosure (whether alive or sieged) do not affect the territory calculation.
+
+**Effective territory points = total intersections inside the enclosure − intersections occupied by the opponent's live stones**
+
+**Dynamic update**: when an enclosure forms / expands / shrinks / is broken through, the score changes in real time.
+
+#### 4.3 Nested Enclosures
+
+Judged layer by layer from the inside out:
+- The inner layer is formed by **live** stones → the inner region belongs to the inner side, and the outer enclosure's effective territory points are reduced by the entire inner region.
+- The inner layer is formed by **sieged** stones → the inner layer is invalid and the region belongs to the outer valid enclosure.
+
+Dynamic update: when the life/death status of inner-layer stones changes, the nested ownership is re-judged immediately and both sides' territory scores are updated.
+
+#### 4.4 Score Changes on Status Transitions of Enclosed Stones
+
+**I. Status transitions of the attacker's stones (attacker stones inside the defender's enclosure)**
+
+| Transition | Trigger | Defender's Siege | Attacker's Live | Territory |
+|---|---|---|---|---|
+| Alive → Sieged | validly enclosed + no two eyes + empty points < 4 | +1/stone | −1/stone | the point starts counting toward the defender's territory |
+| Sieged → Alive (making eyes) | two eyes made | −1/stone | +1/stone | the point no longer counts toward the defender's territory |
+| Sieged → Captured | captured | −1/stone | — | Annihilation +2; Casualty −1 |
+| Sieged → Broken out | enclosure broken | −1/stone | +1/stone | the defender's enclosure disappears; all territory deducted |
+| Sieged → Empty points restored | empty points back to ≥ 4 | −1/stone | +1/stone | the point no longer counts toward the defender's territory |
+
+**II. Status transitions of the defender's enclosing stones**
+
+| Transition | Trigger | Attacker's Siege | Defender's Live | Territory |
+|---|---|---|---|---|
+| Alive → Sieged | validly counter-enclosed + siege conditions met | +1/stone (if applicable) | −1/stone (if applicable) | the defender's territory for that enclosure is deducted |
+| Sieged → Alive | siege lifted | −1/stone | +1/stone (if applicable) | the defender's territory for that enclosure is restored |
+
+**Nested update**: when the status of the defender's enclosing stones changes, ownership of the regions inside that enclosure is re-judged immediately.
+
+#### 4.5 Borderline Special Rules
+
+The Borderline (row 10) belongs to neither side. Both sides may earn Occupation and Defense points there. For enclosures on the Borderline: empty points inside earn +2 Occupation, and the opponent's sieged stones inside earn +1 Defense; both may stack.
+
+### Chapter 5: Defense Score
+
+**Defense = Annihilation + Siege**
+
+#### 5.1 Annihilation
+
+| Trigger | Change |
+|---|---|
+| Capturing opponent stones in **your own territory** | +2/stone |
+| Capturing opponent stones on the **Borderline** | +2/stone |
+| Capturing opponent stones in the **opponent's territory** | **No annihilation** |
+
+**Note**: Annihilation measures defensive results and only counts when you eliminate enemies in your own territory or on the Borderline. The value of captures in the opponent's territory is already reflected through the territory score.
+
+**When capturing a sieged stone**: first lift the siege (Siege −1), then gain Annihilation +2. Net defense change +1. The attacker's Casualty still applies −1.
+
+#### 5.2 Siege
+
+**Siege definition**: surrounded by the opponent's **valid enclosure** + has not made two true eyes + legal empty points inside the enclosure < 4.
+
+**Siege settlement** (live and dynamic):
+
+| Event | Siege change | Live-stone change | Territory change |
+|---|---|---|---|
+| **Entering siege** | Defender +1/stone | Attacker −1/stone | the stone's point starts counting toward the defender's territory |
+| **Siege lifted** | Defender −1/stone | Attacker +1/stone | the stone's point no longer counts toward the defender's territory |
+
+**Siege regional rules**:
+
+| Enclosure location | Siege points |
+|---|---|
+| Inside your own territory | +1/stone |
+| On the Borderline | +1/stone (stacks with territory) |
+| Inside the opponent's territory | none (covered by territory) |
+
+**Ways to lift a siege**:
+1. Making life (making two true eyes)
+2. Breaking through the enclosure (the enclosure is broken)
+3. Empty points restored to ≥ 4
+4. Being captured (Siege −1, Annihilation +2, Casualty −1)
+
+### Chapter 6: Siege Judgment
+
+#### 6.1 When to Judge
+
+Whenever the board state changes (a stone placed or captured), the system automatically checks whether the relevant stones satisfy the siege conditions. The result is immediately reflected in the scores.
+
+#### 6.2 Basic Principle
+
+**Stones have only two states: live and sieged.**
+
+#### 6.3 Live Judgment (alive if ANY condition holds)
+
+1. **Has two true eyes**: regardless of being surrounded or the number of empty points.
+2. **Not surrounded by a valid enclosure of the opponent**.
+3. **Surrounded by a valid enclosure, but legal placement points inside ≥ 4**.
+
+#### 6.4 Siege Judgment (ALL three conditions must hold)
+
+1. **Surrounded by a valid enclosure of the opponent**.
+2. **Does not have two true eyes**.
+3. **Legal placement points inside < 4**.
+
+**Valid enclosure**: a closed geometric boundary formed by **live** stones. Enclosures formed by sieged stones are invalid.
+
+#### 6.5 Independent True Eye Judgment
+
+An eye point is an independent true eye if and only if the opponent placing a stone there would be suicide (a forbidden point).
+
+#### 6.6 Legal Empty Points
+
+Simulated placement: if a stone placed at the point has liberties, or — although without liberties — immediately captures opponent stones, the point is a legal placement; otherwise it is a forbidden point and does not count as an empty point.
+
+#### 6.7 Judgment Quick Reference
+
+| Has two true eyes? | Validly surrounded? | Empty points < 4? | Result |
+|---|---|---|---|
+| Yes | — | — | **Live** |
+| No | No | — | **Live** |
+| No | Yes | No | **Live** |
+| No | Yes | Yes | **Sieged** |
+
+#### 6.8 Important Notes
+
+- There are no "dead stones"; only live and sieged.
+- There is no "seki (mutual life)"; when two sides surround each other, each side is judged independently.
+- On-screen indicator: sieged stones always show a chain icon during play.
+
+### Chapter 7: Casualty Score
+
+| Trigger | Change |
+|---|---|
+| Actually captured by the opponent at **any location** | −1/stone |
+
+**Casualty and Siege**: when a stone is captured, if it was sieged at that moment, first execute the siege lift (Siege −1), then the Casualty −1, and finally the Annihilation +2 (if applicable).
+
+### Chapter 8: Ko
+
+#### 8.1 Move Rules
+
+Repetition of the whole-board position is forbidden. After capturing in a ko, the opponent must find a ko threat and may not immediately recapture.
+
+#### 8.2 In-Game Score Settlement
+
+Every capture is settled as usual: capturing in your own territory / on the Borderline → Annihilation +2; the captured side → Casualty −1; also check whether the siege status changed.
+
+#### 8.3 Endgame Handling
+
+At the end of the game the ko is not played out. The ownership is decided by "who benefits more from the ko":
+- Simulate both sides winning separately and compute each side's net score increase (including changes to Annihilation, Casualty, Live stones, Territory, and Siege).
+- Compare the net increases: the larger side wins the ko; if equal, it is awarded to the side that actually controls the ko stone at the end of the game.
+
+### Chapter 9: Deployment Phase
+
+#### 9.1 Definition
+
+After the game starts, the first 2 rounds (4 moves total) form the **deployment phase**.
+
+- Black's 1st move: must be placed in **Black's territory** (rows 1–9).
+- White's 1st move: must be placed in **White's territory** (rows 11–19).
+- Black's 2nd move: must be placed in **Black's territory** (rows 1–9).
+- White's 2nd move: must be placed in **White's territory** (rows 11–19).
+
+After the deployment phase, from **move 5** (Black) onward the formal combat begins; stones may be placed on any legal intersection.
+
+#### 9.2 Deployment Rules
+
+- **Placement area**: only your own territory; the Borderline and the opponent's territory are not allowed.
+- **Scoring**: placing in your own territory during deployment earns no live-stone, territory, annihilation, or siege points.
+- **Captures**: during deployment both sides' stones are inside their own territories, so captures are impossible.
+- **Passing forbidden**: during deployment you must place a stone; passing is not allowed.
+- **Force consumption**: deployment placements consume forces normally.
+- **Enclosures**: enclosures formed in your own territory during deployment do not generate territory points.
+- **Timing**: each side has its own independent clock (default 2 minutes each); only the side whose turn it is has its time deducted. When a side runs out of time, the system automatically places random stones for it inside its own territory until it has placed 2 stones and completes its deployment.
+
+#### 9.3 Deployment Strategy Notes
+
+| Placement | Strategic intent |
+|---|---|
+| **Near the Borderline** | Prepare to fight for the line from move 5 onward |
+| **A corner of your own territory** | Lay the initial foundation for later enclosures |
+| **Near the center** | Establish a flexible initial foothold |
+
+### Chapter 10: Moves and Endgame
+
+#### 10.1 Moves
+
+- Black moves first.
+- **Deployment phase** (first 4 moves): must be placed in your own territory.
+- **Combat phase** (from move 5): may be placed on any legal intersection.
+- Players alternate; stones without liberties are captured (settling Annihilation / Casualty); suicide is forbidden.
+- **Ko**: repetition of the whole-board position is forbidden.
+- Passing is allowed (except during deployment), with a **pass cooldown of 2 of your own turns**: after a side passes, it must complete 2 of its own turns (place / deploy / bounce) before it may pass again; a side that has never passed may pass at any time. Two consecutive passes by both sides → endgame.
+- **After every move the system checks automatically**: enclosure formation/breaking → territory updated; siege status changes → siege and live-stone points updated.
+
+#### 10.2 Forced Endgame
+
+One side runs out of stones and both sides pass consecutively → endgame.
+
+#### 10.3 Endgame Settlement
+
+1. Both sides have passed consecutively.
+2. The system handles the ko (simulated judgment).
+3. A final life/death judgment is performed on the current board and all dynamic scores are frozen.
+4. Read both sides' final totals. **White's total gets an additional +0.5 komi**.
+5. Compare: **Black's total vs White's total + 0.5**. The higher side wins. Equal scores mean a draw.
+
+## Part II: Optional Rules
+
+### Optional Rule: Special Forces (Covert Operations)
+
+#### Rule Attributes
+
+- **Type**: optional add-on rule.
+- **Applicable modes**: custom rooms, total war mode.
+- **Default state**: off.
+
+#### Skill Details
+
+| Attribute | Setting |
+|---|---|
+| Uses | 2 per game, cannot be used consecutively |
+| Duration | 20 turns (20 moves by each side), automatically revealed when expired |
+| Stone consumption | does not count toward the force limit |
+
+**Announcement**: when activated, a public announcement is shown to all; the specific position is not revealed.
+
+**Deployment scoring**: no immediate score. Its value lies in the endgame rewards.
+
+**Casualty**: when captured, the casualty is **−6 points** (the opponent still earns Annihilation +2 as usual).
+
+**Success rewards** (three mutually exclusive; at endgame the best one applies):
+
+1. **Territory involvement**: the stone is alive in the opponent's territory and participates in an enclosure → that enclosure's territory score is **doubled**.
+2. **Covert survival**: the stone is alive in the opponent's territory but does not participate in an enclosure → the stone counts as **+3 Occupation** (replacing the normal +1).
+3. **Borderline contribution**: the stone is alive on the Borderline and participates in an enclosure → the **total Defense score produced by that enclosure increases by 50%** (rounded up).
+
+**Exposure conditions**: the opponent lands on that point or one of its four adjacent cells, or the 20 turns expire.
+
+**Overlap handling**: when the opponent's placement overlaps a hidden stone, the hidden stone is revealed and the opponent's placement is randomly bounced to one of the 8 surrounding cells.
+
+**Endgame handling**: all unrevealed hidden stones are revealed and settled by the normal rules, and it is judged whether success rewards trigger.
+
+## Appendix: Ambiguity Quick Reference
+
+| # | Question | Conclusion |
+|---|---|---|
+| 1 | Edge ownership | Black on top, White on bottom; left/right edges divided by rows |
+| 2 | The Borderline | An independent region where both sides may score |
+| 3 | When are all scores settled | **All live and dynamic** |
+| 4 | Enclosure validity | Formed by live stones; purely geometric judgment |
+| 5 | Live stones | Placed in enemy territory / on the Borderline with liberties +1/stone, no limit |
+| 6 | Territory | +2 per point inside; deduct the opponent's live stones; includes the opponent's sieged stones |
+| 7 | Opponent makes life inside | The side making life earns new territory; the outer layer deducts the live stones and the inner region |
+| 8 | Siege definition | Surrounded by a **valid enclosure** + no two eyes + legal empty points < 4 |
+| 9 | Live definition | **Positive enumeration**: has two eyes; or not validly surrounded; or empty points ≥ 4 |
+| 10 | Two-eyes priority | Two independent true eyes means alive |
+| 11 | Dead stones / seki | Neither exists |
+| 12 | Legal empty points | Excludes forbidden points |
+| 13 | Siege settlement | Live and dynamic |
+| 14 | Siege regions | Own territory / Borderline +1; enemy territory not counted |
+| 15 | Annihilation | Capturing in own territory / on the Borderline +2; in the opponent's territory none |
+| 16 | Casualty | −1 in real time when captured |
+| 17 | Capturing a sieged stone | Siege −1 → Annihilation +2 → Casualty −1 |
+| 18 | Live stones & siege linkage | Deducted when sieged, restored when lifted |
+| 19 | Nested enclosures | Inner layer alive → belongs to inner side; inner layer sieged → belongs to outer side |
+| 20 | Pass recovery | Automatically restored after the opponent moves |
+| 21 | Forces exhausted | The exhausted side stops; neither can move → endgame |
+| 22 | Borderline enclosure stacking | Empty-point occupation + enemy sieged siege points; stackable |
+| 23 | Hidden stone overlap | The opponent is bounced to one of the 8 surrounding cells |
+| 24 | Hidden stone casualty | −6 when captured |
+| 25 | Hidden stone rewards | Three mutually exclusive, best one applies |
+| 26 | Ko moves | Repetition of the whole-board position forbidden |
+| 27 | Ko at endgame | Simulate both sides winning, compare net increases |
+| 28 | Edge enclosures | Edges are natural walls; occupy the endpoints |
+| 29 | Has liberties | At least one adjacent empty intersection in the connected group |
+| 30 | Endgame settlement | Handle ko → freeze scores → read totals → White +0.5 komi |
+| 31 | Deployment phase | First 4 moves must be in your own territory, no passing, no scoring |
+| 32 | Combat phase starts | From move 5 (Black) any legal point is allowed |
+| 33 | Deployment enclosures | Enclosures in your own territory produce no territory points |
+| 34 | Komi | White +0.5, equivalent to White winning ties |
+
+**"War Horn · Borderline" Rulebook v6.2 — finalized.**
+
+**Core changes in this version:**
+1. **Live judgment changed to positive enumeration**: alive if ANY of "has two true eyes", "not validly surrounded", "validly surrounded but empty points ≥ 4" holds.
+2. **Siege definition and conditions** clarified that "surrounded" means "surrounded by the opponent's VALID enclosure", fixing the bug where stones surrounded only by dead stones were wrongly judged sieged.
+3. Chapter 4 status transitions, Chapter 5 siege, Chapter 6 judgment rules, and the ambiguity quick-reference table were updated accordingly.
+
+**Changelog (v6.2 → code implementation):**
+
+- Rollback point: `git tag pre-effective-enclosure` (points to commit bf83972, before this rule semantics were implemented in code)
+- Rollback command: `git reset --hard pre-effective-enclosure` (undoes all code changes below)
+- Changes: implemented the Chapter 6 semantics "valid enclosure = a closed geometric boundary formed by LIVE stones" in SiegeDetector / GameSession / ScoreCalculator:
+  - The "surrounded" judgment for siege changed from purely geometric (all opponent stones as walls) to "surrounded by the opponent's valid enclosure formed by LIVE stones" (the opponent's sieged stones do not act as walls and can be passed through)
+  - Life/death judgments have mutual dependencies (A surrounded by B, B surrounded by A, etc.); changed to an iterative fixed-point solution until convergence; when mutually surrounded groups cannot converge, handle per "no seki; each side judged independently; if both satisfy the siege conditions then both are sieged"
+  - Added test cases: an enclosure formed by dead stones is not a valid enclosure (the side surrounded only by sieged stones should be alive)
+
+**Changelog (2026-08-14 territory scoring BUG fix):**
+
+- Rollback point: `git tag pre-cavity-territory` (points to the commit before the fix)
+- Rollback command: `git reset --hard pre-cavity-territory` (undoes all code changes below)
+- BUG: **the same nested enclosure produced different territory scores** (the same structure in different positions gave inconsistent territory points)
+- Root cause: `TerritoryDetector._collect_raw_enclosures` only detected enclosures from "empty connected regions". When the inside of an enclosure was filled with opponent stones (e.g., a cavity inside a solid black wall holding a white frame) and the empty region's immediate boundary was opponent stones, that cavity formed no detected enclosure → the **sieged opponent stones inside were not counted into the enclosing side's territory score** (violating rule 4.2 "the opponent's sieged stones inside count toward the enclosing side's territory"), causing inconsistent and too-low scores (0/2/2) for the same structure at different positions
+- Fix (`TerritoryDetector.gd`):
+  1. Added **cavity enclosure detection (Pass B)**: `_compute_outside` refactored into `_compute_wall_components` (one BFS obtains both "outside" and all "cavities"); for each cavity of each wall color, if its empty points are not fully covered by the Pass A enclosures of the same color, build a supplementary enclosure so the sieged opponent stones inside can score; empty-point ownership is still decided by Pass A (innermost direct-boundary ownership), with nested deduplication ensuring no duplicates
+  2. Sorting changed to **region ascending + stable seq order** (inner small enclosures processed first), ensuring rule 4.3 "inner layer alive → belongs to inner side" (outer cavity enclosures do not seize inner empty points)
+  3. The `stones_inside` semantics now match the docs: "a purely geometric candidate with no life/death filtering; scoring decides siege via ScoreCalculator" — two-true-eye live stones are geometrically inside the cavity but excluded during scoring (rule 4.2: the opponent's live stones do not count)
+- Score changes (black solid wall enclosing a white frame): Black territory 0, Borderline 12 (center 2 + 5 attack-zone stones ×2), White territory 18 (8 stones ×2 + center 2); identical across different columns of the same rows
+- Tests: `test_territory_siege_edge.gd` C4/C7/C8/C9 expectations updated (2 → 12/18); `test_territory.gd` case 7 changed to assert live-stone exclusion during scoring; main tests 953 passed + SGF audit 40400 items with 0 failures
+
+**Changelog (2026-08-14 mixed-boundary pocket ownership fix):**
+
+- Rollback point: `git tag pre-min-cavity` (points to the commit before the fix, including the previous cavity-territory fix)
+- BUG: **mirror structures gave asymmetric territory scores** (in a real game the top-left / bottom-left were mirror images, but the top-left scored 1 point less)
+- Root cause: in `TerritoryDetector` Pass A, for a mixed-boundary empty region (e.g., (3,3) adjacent to 2 black + 2 white stones), it took the **first** color in the `border_colors` iteration that could close it. In the top-left the white L-shaped wall was the inner enclosure and the black outer wall was outer, but the border-color iteration hit black first → awarded to the outer black, violating rule 4.3 "inner layer formed by live stones → belongs to the inner side". In the bottom-left mirror, the inner layer happened to also be black and was hit first by coincidence, so it happened to be correct → the asymmetry
+- Fix: when multiple colors can close an empty region, choose the **smallest cavity containing it** (= the innermost enclosure). `_collect_raw_enclosures` pre-builds a per-color `idx → cavity size` index (`cav_idx`); Pass A picks the smallest cavity among all closable colors
+- Score changes (real game move 46): Black 37 unchanged; White 35 → 37 ((3,3) pocket switches from black to white +2). With komi 0.5: Black 36.5 : White 37 → White wins
+- Tests: added C10 mirror regression (top-left white inner territory 28 = bottom-right black inner territory 28, totals symmetric); main tests 956 passed + SGF audit 40400 items with 0 failures
+
+**Changelog (2026-08-15 invalid-enclosure display / log fix):**
+
+- BUG (display layer): enclosures formed by sieged stones themselves (invalid per rules 3.4/4.2) were still displayed as valid territory fills and in the game log (e.g., in a real game the point (17,0) enclosed by three sieged black stones was painted as black territory), inconsistent with scoring (already deducted), creating the illusion that "the score was deducted but the board still draws it"
+- Fix:
+  1. `ScoreCalculator.is_enclosure_formed_by_sieged` made public (was `_is_enclosure_formed_by_sieged`) and changed to existence check via `sieged_stones_set.has(idx)` — compatible with both color values and `true`-valued sets (the original `get(idx) == color` crashed at runtime when a bool set was passed)
+  2. `BoardView._draw_territory_fills` skips invalid enclosures and no longer fills their territory
+  3. `GameScreen`'s game log marks invalid enclosures with "【无效-由围困棋子围成】" (invalid — formed by sieged stones)
+- Verification: in a real game move 71 the point (17,0) was judged invalid (all other enclosures valid); main tests 956 + UI 121 passed; added C4b regression assertion
+
+**Changelog (2026-08-15 territory-effect display consistency fix):**
+
+- Issue: territory **animations** (formation / expansion / loss effects and the "Territory ±N" popup) were still based on the geometric enclosure list, inconsistent with the fill/scoring layers: (1) invalid enclosures (formed by sieged stones) also triggered territory-formation animations and +N popups, but no score was added; (2) "Territory +N" directly used points × 2 without filtering attack zones, so popups were inflated when the enclosure landed in your own territory
+- Fix (`GameScreen.gd`):
+  1. Added `_valid_enclosures()` (filters invalid enclosures formed by sieged stones); territory-effect detection and the `_prev_enclosures` state tracking now consistently use valid enclosures only
+  2. Added `_territory_points(pts, color)` which scores by attack zones; the "Territory ±N" popup now matches the actual score (rule 4.2: only opponent territory / Borderline +2/point)
+- Verification: a 71-move real game showed "valid enclosure attack-zone scoring Black 8 / White 12 = actual scores Black 8 / White 12"; the invalid enclosure at (17,0) no longer triggers effects; SGF audit 40400 items 0 failures + main tests 958 + UI 121 passed
+
+**Changelog (2026-08-15 pass cooldown of 2 own turns):**
+
+- Change: **pass cooldown changed to 2 of your own turns** — after a side passes, it must complete 2 of its own turns (place / deploy / bounce) before it may pass again. Removed the previous "2 passes per side per game" limit and the "a side cannot pass twice in a row" rule (consecutive passes are naturally prevented by the cooldown). Two consecutive passes by both sides still trigger the endgame as usual (automatic endgame retained). Replays and audits of old game records bypass the limits via `skip_pass_limits` (the old rules had no such limits, so old records do not become invalid)
+- Code (`GameSession.gd`): removed `PASS_LIMIT` / `pass_counts` / `last_pass_color`; added `PASS_COOLDOWN_TURNS = 2` and `pass_cooldown` (color → count of your own turns since the last pass, initialized to 2 meaning no cooldown); `do_pass` rejects when the cooldown is insufficient ("pass cooling down (need N more of your own turns)"); in `_commit_turn`, non-pass moves add 1 to the mover's `pass_cooldown` (capped at 2), while a pass resets it to 0; snapshots / undo / clone sync the new state
+- Tests: `test_signals.gd` rewrote PASS1–PASS13 (basic cooldown / 2-turn threshold / the opponent's moves do not increase your cooldown / both-pass endgame / undo recovery / clone sync / skip bypass); main tests + UI integration + online full regression
+
+**Changelog (2026-08-15 pass log color / one-sided consecutive passes fix):**
+
+- BUG: the game log showed "the same side passing consecutively" (e.g., two consecutive `White@(-1,-1)` entries). **Root cause**: `do_pass` did not set `outcome.mover_color`, and `_record_log_entry` read `outcome.get("mover_color", session.to_move)` AFTER `_commit_turn` (when `to_move` had already switched to the opponent) → a Black pass was recorded as White; combined with PvE mode where the player could press pass during the AI's turn (`_on_pass` had no turn check) and pass for the AI, producing the "one-sided consecutive passes" appearance and potentially wrongly triggering the endgame
+- Fix:
+  1. `GameSession.do_pass` explicitly sets `outcome.mover_color = color` (consistent with placements/deployments); logs and effects now record the real mover
+  2. `GameScreen._on_pass` adds a turn check in PvE mode (prompts "Not your turn" when it is not the player's turn); the player can no longer pass for the AI
+- Tests: test_signals PASS1 added an assertion (outcome.mover_color = Black); UI integration section 5 (Black pass log color = Black) and 11b (PvE pass rejected during the AI's turn, no accidental endgame); main tests 991 + UI 128 + online 56 all passed
+
+**Changelog (2026-08-15 independent deployment clocks + timeout auto-placement):**
+
+- Change: the deployment phase changed from "a shared 2-minute countdown; when it runs out the game opens immediately" to "**each side has its own independent 2-minute clock**; only the side whose turn it is has its time deducted; when a side runs out of time, the system automatically places random stones for it inside its own territory; when both sides have placed 2 stones each, the game opens"
+- Code (`GameScreen.gd`): `_deploy_time_left` changed from `float` to `Dictionary{color: float}`; in `_process` only the current mover's time is deducted; when the time runs out and that side's `_deploy_stones[mover] < DEPLOY_STONES_PER_SIDE`, the new `_auto_deploy_random(mover)` places a random stone inside its own territory (reusing `_ai_deploy_choose`'s preferred-point + random fallback logic); added the `_deploy_timeout_triggered` flag to prevent repeated triggers every frame; added `_no_empty_in_own_zone` as an extreme fallback (if no empty points remain in its own territory, mark that side's deployment complete)
+- Online: the host authoritatively deducts time + authoritatively auto-places + broadcasts to the client via `NetSync.confirm_move`; the client estimates time locally but does not act on timeout (it waits for the host's confirm to apply to its local session)
+- Display: `_push_deploy_to_panels` now pushes each side's independent time to its own score panel (the Black panel shows Black's time, the White panel shows White's time)
+- Rulebook: section 9.2 added the "Timing" entry
+- Tests: UI integration section 18 "deployment initial countdown ≈ 120 seconds" changed to "Black/White each ≈ 120 seconds"; "deployment timeout auto-opens" changed to "after both sides run out of time, random placement happens and the game opens with ply=4"

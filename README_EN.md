@@ -168,7 +168,7 @@ godot --headless --script res://tests/run_all.gd
 
 ## Rules Document
 
-The full rule book is available in [战争号角-边境线规则文档.txt](战争号角-边境线规则文档.txt) (v6.2).
+The full rule book is available in English: [WarHorn-Borderline-Rules_EN.txt](WarHorn-Borderline-Rules_EN.txt) (v6.2); the original Chinese version is [战争号角-边境线规则文档.txt](战争号角-边境线规则文档.txt).
 
 ## Tech Stack
 

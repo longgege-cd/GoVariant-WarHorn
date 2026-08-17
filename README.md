@@ -164,7 +164,7 @@ godot --headless --script res://tests/run_all.gd
 
 ## 规则文档
 
-完整规则书见 [战争号角-边境线规则文档.txt](战争号角-边境线规则文档.txt)（v6.2）。
+完整规则书见 [战争号角-边境线规则文档.txt](战争号角-边境线规则文档.txt)（v6.2）。英文版见 [WarHorn-Borderline-Rules_EN.txt](WarHorn-Borderline-Rules_EN.txt)。
 
 ## 技术栈
 

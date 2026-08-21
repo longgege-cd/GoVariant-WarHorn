@@ -12,6 +12,7 @@
 import dotenv from "dotenv";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { existsSync } from "node:fs";
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), "..", ".env") });
 
 import express from "express";
@@ -49,9 +50,32 @@ const app = express();
 app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
-app.get("/", (_req, res) => {
-  res.json({ ok: true, service: "warhorn-server", version: "0.1.0" });
-});
+// 单服务部署：若存在前端构建产物（client/dist），由后端一并托管静态资源
+// 开发环境（未构建前端）时 `/` 仍返回 JSON 服务信息。
+const clientDist = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "client", "dist");
+const indexHtml = resolve(clientDist, "index.html");
+
+if (existsSync(indexHtml)) {
+  app.use(express.static(clientDist));
+  app.get("/", (_req, res) => res.sendFile(indexHtml));
+  // SPA 回退：非 API 的 GET 请求统一返回 index.html（刷新页面不 404）
+  app.use((req, res, next) => {
+    if (
+      req.method === "GET" &&
+      !req.path.startsWith("/api") &&
+      !req.path.startsWith("/admin") &&
+      !req.path.startsWith("/socket.io")
+    ) {
+      return res.sendFile(indexHtml);
+    }
+    next();
+  });
+} else {
+  app.get("/", (_req, res) => {
+    res.json({ ok: true, service: "warhorn-server", version: "0.1.0" });
+  });
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });

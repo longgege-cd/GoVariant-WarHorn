@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+*.log
+# 超大探针日志（误写盘，勿入库）
+packages/engine/tests/_probe.log
+.DS_Store
+.env
+.env.local
+*.tsbuildinfo
+.vscode/
+.idea/

@@ -1,0 +1,22 @@
+{
+  "name": "warhorn-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WEB版《围棋变体-战争号角》MVP - 在线对战平台",
+  "workspaces": [
+    "packages/engine",
+    "packages/client",
+    "packages/server",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:client": "npm run dev --workspace @warhorn/client",
+    "dev:server": "npm run dev --workspace @warhorn/server",
+    "build": "npm run build --workspace @warhorn/shared && npm run build --workspace @warhorn/engine && npm run build --workspace @warhorn/server && npm run build --workspace @warhorn/client",
+    "test:engine": "npm run test --workspace @warhorn/engine",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

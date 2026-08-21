@@ -162,6 +162,18 @@ input.text-input:focus {
   margin-top: 8px;
   text-align: left;
 }
+.feedback {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted, #8899aa);
+}
+.feedback a {
+  color: var(--font-color, #67b8e0);
+  text-decoration: none;
+}
+.feedback a:hover {
+  text-decoration: underline;
+}
 .rules-title {
   font-weight: 600;
   margin-bottom: 6px;

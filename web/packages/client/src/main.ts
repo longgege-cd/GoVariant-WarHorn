@@ -79,6 +79,7 @@ class App {
           </ol>
         </div>
       </details>
+      <div class="feedback">${t("feedback")}：<a href="mailto:shamdom888@outlook.com">shamdom888@outlook.com</a></div>
     `;
     this.root.appendChild(screen);
     this.currentScreen = { el: screen };

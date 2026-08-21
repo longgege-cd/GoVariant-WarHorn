@@ -38,6 +38,7 @@ const dict: Record<string, { zh: string; en: string }> = {
   "rules.6": { zh: "战损分：己方被提或被围困的棋子扣分。", en: "Casualty: your own captured/sieged stones lose points." },
   "rules.7": { zh: "每方每局可虚手 2 次，不可连续虚手；双方连续虚手自动终局。", en: "2 passes per side, no consecutive passes; two consecutive passes end the game." },
   "rules.8": { zh: "总分 = 占领 + 防御 − 战损；白方 +0.5 贴目（仅终局胜负判定）。", en: "Total = occupation + defense − casualty; White gets +0.5 komi for final result." },
+  "feedback": { zh: "意见反馈", en: "Feedback" },
   // 战争迷雾（可选规则）
   "fog.toggle": { zh: "战争迷雾", en: "Fog of War" },
   "fog.hint": { zh: "（布局阶段起视野受限，第30手后全盘可见）", en: "(Vision limited from deployment; fully revealed after move 30)" },

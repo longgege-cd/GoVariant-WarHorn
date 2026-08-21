@@ -12,7 +12,7 @@
   "scripts": {
     "dev:client": "npm run dev --workspace @warhorn/client",
     "dev:server": "npm run dev --workspace @warhorn/server",
-    "build": "npm run build --workspace @warhorn/shared && npm run build --workspace @warhorn/engine && npm run build --workspace @warhorn/server && npm run build --workspace @warhorn/client",
+    "build": "npm run build --workspace @warhorn/server && npm run build --workspace @warhorn/client",
     "test:engine": "npm run test --workspace @warhorn/engine",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

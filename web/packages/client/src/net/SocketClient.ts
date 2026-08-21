@@ -25,8 +25,11 @@ export class SocketClient {
   onError?: (payload: ErrorPayload) => void;
   onDisconnect?: () => void;
 
-  constructor(serverUrl: string = "http://localhost:3000") {
-    this.serverUrl = serverUrl;
+  constructor(serverUrl?: string) {
+    this.serverUrl =
+      serverUrl ??
+      import.meta.env.VITE_SERVER_URL ??
+      "http://localhost:3000";
   }
 
   connect(): Promise<void> {
